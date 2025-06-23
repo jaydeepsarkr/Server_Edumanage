@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ["student", "teacher", "admin"],
+    enum: ["student", "teacher", "admin", "parent"],
     required: true,
   },
 
@@ -54,6 +54,7 @@ const userSchema = new mongoose.Schema({
       message: "Roll number is required for students",
     },
   },
+  createdAt: { type: Date, default: Date.now },
 });
 
 // Hash password before saving

@@ -7,10 +7,45 @@ exports.getStudents = async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const students = await User.find({ role: "student" })
-      .select("username role email phone address class rollNumber")
-      .sort({ username: 1 });
-    res.json(students);
+    const {
+      search = "",
+      page = 1,
+      limit = 10,
+      sort = "asc",
+      class: classFilter,
+    } = req.query;
+
+    const searchRegex = new RegExp(search, "i");
+
+    // Basic filter
+    const filter = {
+      role: "student",
+      $or: [
+        { username: searchRegex },
+        { email: searchRegex },
+        { phone: searchRegex },
+      ],
+    };
+
+    // Optional class filter
+    if (classFilter) {
+      filter.class = classFilter;
+    }
+
+    const total = await User.countDocuments(filter);
+
+    const students = await User.find(filter)
+      .select("name role email phone address class rollNumber createdAt status")
+      .sort({ class: sort === "desc" ? -1 : 1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    res.json({
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      students,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
