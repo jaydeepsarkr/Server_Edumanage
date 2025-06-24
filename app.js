@@ -5,6 +5,7 @@ const cors = require("cors");
 
 const authRoutes = require("./routes/auth");
 const attendanceRoutes = require("./routes/attendanceRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 app.use(cors());
@@ -20,7 +21,7 @@ mongoose
 app.use("/api/auth", authRoutes);
 app.use("/api", attendanceRoutes);
 app.use("/api/attendance", attendanceRoutes);
-app.use("/api/attendance", attendanceRoutes);
+app.use("/api", userRoutes);
 
 // Root
 app.get("/", (req, res) => {

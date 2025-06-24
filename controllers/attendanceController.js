@@ -17,7 +17,6 @@ exports.getStudents = async (req, res) => {
 
     const searchRegex = new RegExp(search, "i");
 
-    // Basic filter
     const filter = {
       role: "student",
       $or: [
@@ -27,7 +26,6 @@ exports.getStudents = async (req, res) => {
       ],
     };
 
-    // Optional class filter
     if (classFilter) {
       filter.class = classFilter;
     }
@@ -42,136 +40,51 @@ exports.getStudents = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(Number(limit));
 
+    // Get today’s date range
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Get student IDs
+    const studentIds = students.map((s) => s._id);
+
+    // Get today's attendance for those students
+    const todaysAttendance = await Attendance.find({
+      studentId: { $in: studentIds },
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    // Map attendance to student IDs
+    const attendanceMap = {};
+    todaysAttendance.forEach((record) => {
+      attendanceMap[record.studentId.toString()] = {
+        status: record.status,
+        notes: record.notes,
+      };
+    });
+
+    // Attach attendance info to each student
+    const studentsWithAttendance = students.map((student) => {
+      const record = attendanceMap[student._id.toString()];
+      return {
+        ...student.toObject(),
+        attendanceStatus: record?.status || null,
+        remarks: record?.notes || "",
+      };
+    });
+
     res.json({
       total,
       page: Number(page),
       totalPages: Math.ceil(total / limit),
-      students,
+      students: studentsWithAttendance,
     });
   } catch (error) {
+    console.error("Error in getStudents:", error);
     res.status(500).json({ error: error.message });
   }
 };
-
-exports.markAttendanceManual = async (req, res) => {
-  try {
-    // ✅ Ensure only teachers can mark attendance
-    if (req.user.role !== "teacher") {
-      return res
-        .status(403)
-        .json({ error: "Only teachers can mark attendance" });
-    }
-
-    const { studentId, status, subject, notes } = req.body;
-
-    // ✅ Define the date range for "today"
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // ✅ Check if attendance already exists
-    let existingAttendance = await Attendance.findOne({
-      studentId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-    });
-
-    if (existingAttendance) {
-      // ✅ Update existing attendance
-      existingAttendance.status = status;
-      existingAttendance.subject = subject;
-      existingAttendance.notes = notes;
-      existingAttendance.markedBy = req.user.username;
-      existingAttendance.teacherId = req.user.userId;
-      existingAttendance.markedAt = new Date();
-      existingAttendance.method = "manual";
-      existingAttendance.attendanceByNFC = false;
-
-      await existingAttendance.save();
-
-      return res.status(200).json({
-        message: "Attendance updated successfully",
-        attendance: existingAttendance,
-      });
-    }
-
-    // ✅ Fetch student info
-    const student = await User.findById(studentId);
-    if (!student || student.role !== "student") {
-      return res
-        .status(404)
-        .json({ error: "Student not found or invalid role" });
-    }
-
-    // ✅ Create new attendance
-    const attendance = new Attendance({
-      studentId,
-      teacherId: req.user.userId,
-      class: student.class || null,
-      subject,
-      status,
-      notes,
-      date: startOfDay,
-      markedBy: req.user.username,
-      markedAt: new Date(),
-      method: "manual",
-      attendanceByNFC: false,
-    });
-
-    await attendance.save();
-
-    res
-      .status(201)
-      .json({ message: "Attendance marked successfully", attendance });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-exports.markAttendanceViaUrl = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const student = await User.findOne({ _id: studentId, role: "student" });
-    if (!student) return res.status(404).json({ error: "Student not found" });
-
-    const existingAttendance = await Attendance.findOne({
-      studentId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-    });
-
-    if (existingAttendance) {
-      return res.json({
-        message: "Attendance already marked",
-        attendance: existingAttendance,
-      });
-    }
-
-    const attendance = new Attendance({
-      studentId,
-      teacherId: null,
-      class: student.class || 1,
-      subject: "General",
-      status: "present",
-      date: startOfDay,
-      markedBy: "auto",
-      markedAt: new Date(),
-      method: "url",
-      attendanceByNFC: true,
-    });
-
-    await attendance.save();
-    res.json({ message: "Attendance marked", attendance });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
 exports.getAttendanceHistory = async (req, res) => {
   try {
     const {
@@ -241,6 +154,133 @@ exports.getAttendanceHistory = async (req, res) => {
     res
       .status(500)
       .json({ error: "Server error retrieving attendance history" });
+  }
+};
+exports.markAttendanceManual = async (req, res) => {
+  try {
+    // ✅ Ensure only teachers can mark attendance
+    if (req.user.role !== "teacher") {
+      return res
+        .status(403)
+        .json({ error: "Only teachers can mark attendance" });
+    }
+
+    // ✅ Extract all fields, including attendanceByNFC
+    const {
+      studentId,
+      status,
+      subject = "",
+      notes = "",
+      attendanceByNFC = false,
+    } = req.body;
+
+    // ✅ Define the date range for "today"
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // ✅ Check if attendance already exists for today
+    let existingAttendance = await Attendance.findOne({
+      studentId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    if (existingAttendance) {
+      // ✅ Update existing attendance
+      existingAttendance.status = status;
+      existingAttendance.subject = subject;
+      existingAttendance.notes = notes;
+      existingAttendance.markedBy = req.user.username;
+      existingAttendance.teacherId = req.user.userId;
+      existingAttendance.markedAt = new Date();
+      existingAttendance.method = "manual";
+      existingAttendance.attendanceByNFC = attendanceByNFC;
+
+      await existingAttendance.save();
+
+      return res.status(200).json({
+        message: "Attendance updated successfully",
+        attendance: existingAttendance,
+      });
+    }
+
+    // ✅ Fetch student info to get class
+    const student = await User.findById(studentId);
+    if (!student || student.role !== "student") {
+      return res
+        .status(404)
+        .json({ error: "Student not found or invalid role" });
+    }
+
+    // ✅ Create new attendance entry
+    const attendance = new Attendance({
+      studentId,
+      teacherId: req.user.userId,
+      class: student.class || null,
+      subject,
+      status,
+      notes,
+      date: startOfDay,
+      markedBy: req.user.username,
+      markedAt: new Date(),
+      method: "manual",
+      attendanceByNFC, // ✅ from frontend
+    });
+
+    await attendance.save();
+
+    res.status(201).json({
+      message: "Attendance marked successfully",
+      attendance,
+    });
+  } catch (error) {
+    console.error("Error in markAttendanceManual:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.markAttendanceViaUrl = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const student = await User.findOne({ _id: studentId, role: "student" });
+    if (!student) return res.status(404).json({ error: "Student not found" });
+
+    const existingAttendance = await Attendance.findOne({
+      studentId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+    });
+
+    if (existingAttendance) {
+      return res.json({
+        message: "Attendance already marked",
+        attendance: existingAttendance,
+      });
+    }
+
+    const attendance = new Attendance({
+      studentId,
+      teacherId: null,
+      class: student.class || 1,
+      subject: "General",
+      status: "present",
+      date: startOfDay,
+      markedBy: "auto",
+      markedAt: new Date(),
+      method: "url",
+      attendanceByNFC: true,
+    });
+
+    await attendance.save();
+    res.json({ message: "Attendance marked", attendance });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 };
 
