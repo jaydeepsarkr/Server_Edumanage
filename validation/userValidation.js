@@ -4,7 +4,7 @@ const registerValidation = Joi.object({
   name: Joi.string().min(3).max(50).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
-  role: Joi.string().valid("student", "parent").required(),
+  role: Joi.string().valid("student", "parent", "teacher").required(),
 
   phone: Joi.string()
     .pattern(/^[6-9]\d{9}$/)
@@ -27,6 +27,12 @@ const registerValidation = Joi.object({
     then: Joi.string().required(),
     otherwise: Joi.forbidden(),
   }),
+  // enrollmentDate: Joi.when("role", {
+  //   is: "student",
+  //   then: Joi.date().required(),
+  //   otherwise: Joi.forbidden(),
+  // }),
+  status: Joi.string().valid("active", "leaved", "passout").optional(),
 });
 
 const loginValidation = Joi.object({

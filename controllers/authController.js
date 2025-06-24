@@ -7,8 +7,20 @@ const {
 
 exports.registerUser = async (req, res) => {
   try {
-    const { error } = registerValidation.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    // Validate with abortEarly: false to get all errors
+    const { error } = registerValidation.validate(req.body, {
+      abortEarly: false,
+    });
+
+    if (error) {
+      const errors = {};
+      error.details.forEach((err) => {
+        const key = err.path[0];
+        errors[key] = err.message;
+      });
+
+      return res.status(400).json({ errors });
+    }
 
     const {
       name,
@@ -19,15 +31,29 @@ exports.registerUser = async (req, res) => {
       address,
       class: classLevel,
       rollNumber,
+      enrollmentDate,
+      status,
     } = req.body;
 
+    // Check for duplicate email
     const emailExists = await User.findOne({ email });
-    if (emailExists)
-      return res.status(400).json({ error: "Email already registered." });
+    if (emailExists) {
+      return res.status(400).json({
+        errors: {
+          email: "Email already registered.",
+        },
+      });
+    }
 
+    // Check for duplicate phone
     const phoneExists = await User.findOne({ phone });
-    if (phoneExists)
-      return res.status(400).json({ error: "Phone already registered." });
+    if (phoneExists) {
+      return res.status(400).json({
+        errors: {
+          phone: "Phone already registered.",
+        },
+      });
+    }
 
     const newUser = new User({
       name,
@@ -38,11 +64,15 @@ exports.registerUser = async (req, res) => {
       address,
       class: classLevel,
       rollNumber,
+      enrollmentDate,
+      status,
     });
 
     await newUser.save();
+
     res.json({ message: "User registered successfully." });
   } catch (err) {
+    console.error("Registration error:", err);
     res.status(500).json({ error: "Server error." });
   }
 };
@@ -60,7 +90,11 @@ exports.loginUser = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, role: user.role },
+      {
+        userId: user._id,
+        role: user.role,
+        name: user.name,
+      },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );

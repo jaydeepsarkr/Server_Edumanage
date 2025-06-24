@@ -35,7 +35,9 @@ exports.getStudents = async (req, res) => {
     const total = await User.countDocuments(filter);
 
     const students = await User.find(filter)
-      .select("name role email phone address class rollNumber createdAt status")
+      .select(
+        "_id name role email phone address class rollNumber createdAt status enrollmentDate"
+      )
       .sort({ class: sort === "desc" ? -1 : 1 })
       .skip((page - 1) * limit)
       .limit(Number(limit));
@@ -105,7 +107,7 @@ exports.markAttendanceManual = async (req, res) => {
     const attendance = new Attendance({
       studentId,
       teacherId: req.user.userId,
-      class: student.class || 1,
+      class: student.class || null,
       subject,
       status,
       notes,

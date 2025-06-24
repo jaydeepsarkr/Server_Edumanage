@@ -12,6 +12,11 @@ const userSchema = new mongoose.Schema({
 
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  status: {
+    type: String,
+    enum: ["active", "leaved", "passout"],
+    default: "active",
+  },
 
   phone: {
     type: String,
@@ -54,6 +59,16 @@ const userSchema = new mongoose.Schema({
       message: "Roll number is required for students",
     },
   },
+  enrollmentDate: {
+    type: Date,
+    required: function () {
+      return this.role === "student";
+    },
+    default: function () {
+      return this.role === "student" ? new Date() : undefined;
+    },
+  },
+  remark: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
