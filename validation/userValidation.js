@@ -27,11 +27,11 @@ const registerValidation = Joi.object({
     then: Joi.string().required(),
     otherwise: Joi.forbidden(),
   }),
-  // enrollmentDate: Joi.when("role", {
-  //   is: "student",
-  //   then: Joi.date().required(),
-  //   otherwise: Joi.forbidden(),
-  // }),
+  enrollmentDate: Joi.when("role", {
+    is: "student",
+    then: Joi.date().required(),
+    otherwise: Joi.forbidden(),
+  }),
   status: Joi.string().valid("active", "leaved", "passout").optional(),
 });
 

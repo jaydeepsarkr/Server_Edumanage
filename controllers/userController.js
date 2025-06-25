@@ -37,3 +37,18 @@ exports.getStudentById = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+exports.getUserById = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select("_id name role");
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(user); // Returns _id, name, role
+  } catch (error) {
+    console.error("getUserById error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};

@@ -85,77 +85,6 @@ exports.getStudents = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-exports.getAttendanceHistory = async (req, res) => {
-  try {
-    const {
-      studentId,
-      startDate,
-      endDate,
-      page = 1,
-      limit = 50,
-      self,
-    } = req.query;
-
-    const query = {};
-    const skip = (page - 1) * limit;
-
-    if (req.user.role === "student") {
-      // Student sees only their own attendance
-      query.studentId = req.user.userId;
-    }
-
-    if (req.user.role === "teacher") {
-      if (self === "true") {
-        // Teacher filters to see only records they marked
-        query.teacherId = req.user.userId;
-      }
-      if (studentId) {
-        query.studentId = studentId;
-      }
-    }
-
-    // Admin (or any other role) may access all — optionally enhance this
-    if (
-      req.user.role !== "student" &&
-      req.user.role !== "teacher" &&
-      studentId
-    ) {
-      query.studentId = studentId;
-    }
-
-    // Date filtering
-    if (startDate || endDate) {
-      query.date = {};
-      if (startDate) query.date.$gte = new Date(startDate);
-      if (endDate) query.date.$lte = new Date(endDate);
-    }
-
-    const attendance = await Attendance.find(query)
-      .populate("studentId", "name studentId class")
-      .populate("teacherId", "name email")
-      .sort({ date: -1 })
-      .skip(skip)
-      .limit(Number(limit));
-
-    const total = await Attendance.countDocuments(query);
-
-    res.json({
-      message: "Attendance history retrieved successfully",
-      attendance,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    console.error("Error fetching attendance history:", error);
-    res
-      .status(500)
-      .json({ error: "Server error retrieving attendance history" });
-  }
-};
 exports.markAttendanceManual = async (req, res) => {
   try {
     // ✅ Ensure only teachers can mark attendance
@@ -239,7 +168,6 @@ exports.markAttendanceManual = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 exports.markAttendanceViaUrl = async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -281,6 +209,129 @@ exports.markAttendanceViaUrl = async (req, res) => {
     res.json({ message: "Attendance marked", attendance });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getAttendanceHistory = async (req, res) => {
+  try {
+    const {
+      startDate,
+      endDate,
+      page = 1,
+      limit = 50,
+      class: classFilter,
+      search,
+      self,
+    } = req.query;
+
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    const matchQuery = {};
+
+    // 👤 Restrict student to their own records
+    if (req.user.role === "student") {
+      matchQuery.studentId = req.user.userId;
+    }
+
+    // 👨‍🏫 If teacher wants to see only their own attendance entries
+    if (req.user.role === "teacher" && self === "true") {
+      matchQuery.teacherId = req.user.userId;
+    }
+
+    // 📅 Exact date or date range filter
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+
+      const end = endDate ? new Date(endDate) : new Date(startDate);
+      end.setHours(23, 59, 59, 999);
+
+      matchQuery.date = { $gte: start, $lte: end };
+    }
+
+    const pipeline = [
+      { $match: matchQuery },
+
+      // 👦 Join student data
+      {
+        $lookup: {
+          from: "users",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "student",
+        },
+      },
+      { $unwind: "$student" },
+
+      // 👨‍🏫 Join teacher data
+      {
+        $lookup: {
+          from: "users",
+          localField: "teacherId",
+          foreignField: "_id",
+          as: "teacher",
+        },
+      },
+      { $unwind: { path: "$teacher", preserveNullAndEmptyArrays: true } },
+    ];
+
+    // 🏫 Filter by class (converted to Number)
+    if (classFilter) {
+      const classNumber = parseInt(classFilter);
+      if (!isNaN(classNumber)) {
+        pipeline.push({
+          $match: {
+            "student.class": classNumber,
+          },
+        });
+      }
+    }
+
+    // 🔍 Filter by name or roll number
+    if (search) {
+      pipeline.push({
+        $match: {
+          $or: [
+            { "student.name": { $regex: search, $options: "i" } },
+            { "student.rollNumber": { $regex: search, $options: "i" } },
+          ],
+        },
+      });
+    }
+
+    // 📦 Total count for pagination
+    const totalResult = await Attendance.aggregate([
+      ...pipeline,
+      { $count: "total" },
+    ]);
+    const total = totalResult[0]?.total || 0;
+
+    // 🚀 Add sorting and pagination
+    pipeline.push(
+      { $sort: { date: -1 } },
+      { $skip: skip },
+      { $limit: limitNum }
+    );
+
+    const attendance = await Attendance.aggregate(pipeline);
+
+    res.json({
+      message: "Attendance history retrieved successfully",
+      attendance,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching attendance history:", error);
+    res
+      .status(500)
+      .json({ error: "Server error retrieving attendance history" });
   }
 };
 
@@ -331,8 +382,8 @@ exports.getAttendanceStats = async (req, res) => {
           absent: {
             $sum: { $cond: [{ $eq: ["$status", "absent"] }, 1, 0] },
           },
-          leave: {
-            $sum: { $cond: [{ $eq: ["$status", "leave"] }, 1, 0] },
+          late: {
+            $sum: { $cond: [{ $eq: ["$status", "late"] }, 1, 0] },
           },
           total: { $sum: 1 },
         },
