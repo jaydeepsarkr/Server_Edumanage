@@ -3,10 +3,12 @@ const User = require("../models/User");
 
 exports.getStudents = async (req, res) => {
   try {
+    // ✅ Only allow teachers to access this route
     if (req.user.role !== "teacher") {
       return res.status(403).json({ error: "Access denied" });
     }
 
+    // ✅ Extract filters and pagination
     const {
       search = "",
       page = 1,
@@ -17,9 +19,12 @@ exports.getStudents = async (req, res) => {
 
     const searchRegex = new RegExp(search, "i");
 
+    // ✅ Build MongoDB query filter
     const filter = {
       role: "student",
       $or: [
+        { name: searchRegex },
+        { rollNumber: searchRegex },
         { username: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
@@ -30,8 +35,10 @@ exports.getStudents = async (req, res) => {
       filter.class = classFilter;
     }
 
+    // ✅ Get total count for pagination
     const total = await User.countDocuments(filter);
 
+    // ✅ Fetch paginated students
     const students = await User.find(filter)
       .select(
         "_id name role email phone address class rollNumber createdAt status enrollmentDate"
@@ -40,22 +47,23 @@ exports.getStudents = async (req, res) => {
       .skip((page - 1) * limit)
       .limit(Number(limit));
 
-    // Get today’s date range
+    // ✅ Prepare date range for today
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
+
     const endOfDay = new Date();
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Get student IDs
+    // ✅ Extract student IDs
     const studentIds = students.map((s) => s._id);
 
-    // Get today's attendance for those students
+    // ✅ Fetch today's attendance for those students
     const todaysAttendance = await Attendance.find({
       studentId: { $in: studentIds },
       date: { $gte: startOfDay, $lte: endOfDay },
     });
 
-    // Map attendance to student IDs
+    // ✅ Map attendance data by studentId
     const attendanceMap = {};
     todaysAttendance.forEach((record) => {
       attendanceMap[record.studentId.toString()] = {
@@ -64,7 +72,7 @@ exports.getStudents = async (req, res) => {
       };
     });
 
-    // Attach attendance info to each student
+    // ✅ Add attendance data to each student
     const studentsWithAttendance = students.map((student) => {
       const record = attendanceMap[student._id.toString()];
       return {
@@ -74,17 +82,22 @@ exports.getStudents = async (req, res) => {
       };
     });
 
+    // ✅ Send response with students and pagination
     res.json({
-      total,
-      page: Number(page),
-      totalPages: Math.ceil(total / limit),
       students: studentsWithAttendance,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        pages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error("Error in getStudents:", error);
     res.status(500).json({ error: error.message });
   }
 };
+
 exports.markAttendanceManual = async (req, res) => {
   try {
     // ✅ Ensure only teachers can mark attendance
