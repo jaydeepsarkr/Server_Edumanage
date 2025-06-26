@@ -27,12 +27,18 @@ const registerValidation = Joi.object({
     then: Joi.string().required(),
     otherwise: Joi.forbidden(),
   }),
+
   enrollmentDate: Joi.when("role", {
     is: "student",
     then: Joi.date().required(),
     otherwise: Joi.forbidden(),
   }),
+
   status: Joi.string().valid("active", "leaved", "passout").optional(),
+
+  // ✅ Allow optional fields
+  photo: Joi.string().optional().allow(""),
+  remark: Joi.string().optional().allow(""),
 });
 
 const loginValidation = Joi.object({

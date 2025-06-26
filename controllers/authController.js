@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const sharp = require("sharp");
 const User = require("../models/User");
 const {
   registerValidation,
@@ -55,6 +56,19 @@ exports.registerUser = async (req, res) => {
       });
     }
 
+    // Handle uploaded photo if present
+    let photo = "";
+    if (req.file) {
+      const filename = `user-${Date.now()}.jpeg`;
+      await sharp(req.file.buffer)
+        .resize(500, 500)
+        .toFormat("jpeg")
+        .jpeg({ quality: 90 })
+        .toFile(`public/img/users/${filename}`);
+
+      photo = `img/users/${filename}`; // Store path relative to public
+    }
+
     const newUser = new User({
       name,
       email,
@@ -66,6 +80,7 @@ exports.registerUser = async (req, res) => {
       rollNumber,
       enrollmentDate,
       status,
+      photo, // store the filename
     });
 
     await newUser.save();

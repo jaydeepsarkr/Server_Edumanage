@@ -68,6 +68,10 @@ const userSchema = new mongoose.Schema({
       return this.role === "student" ? new Date() : undefined;
     },
   },
+  photo: {
+    type: String,
+    default: "",
+  },
   remark: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
