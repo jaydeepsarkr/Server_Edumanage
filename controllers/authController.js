@@ -109,6 +109,7 @@ exports.loginUser = async (req, res) => {
         userId: user._id,
         role: user.role,
         name: user.name,
+        photo: user.photo || null,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
@@ -121,6 +122,7 @@ exports.loginUser = async (req, res) => {
         name: user.name,
         role: user.role,
         email: user.email,
+        photo: user.photo || null,
       },
     });
   } catch (err) {

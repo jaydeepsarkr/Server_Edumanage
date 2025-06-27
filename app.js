@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const path = require("path");
 
 const authRoutes = require("./routes/auth");
 const attendanceRoutes = require("./routes/attendanceRoutes");
@@ -10,6 +11,7 @@ const userRoutes = require("./routes/userRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
 // Connect to MongoDB
 mongoose
@@ -18,6 +20,7 @@ mongoose
   .catch((err) => console.error("MongoDB error:", err));
 
 // Routes
+
 app.use("/api/auth", authRoutes);
 app.use("/api", attendanceRoutes);
 app.use("/api/attendance", attendanceRoutes);

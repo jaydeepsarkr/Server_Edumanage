@@ -21,6 +21,7 @@ module.exports = async function authenticateToken(req, res, next) {
       userId: user._id, // ✅ Fixed: will be available in controller
       username: user.username,
       role: user.role,
+      photo: user.photo,
     };
 
     next();
