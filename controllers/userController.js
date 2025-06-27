@@ -4,7 +4,7 @@ exports.getCurrentUser = async (req, res) => {
   try {
     const userId = req.user.userId; // From the token
     const user = await User.findById(userId).select(
-      "_id name role email phone address class rollNumber password"
+      "_id name role email phone address class rollNumber password photo"
     );
 
     if (!user) {

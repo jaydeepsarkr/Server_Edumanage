@@ -248,26 +248,34 @@ exports.getAttendanceHistory = async (req, res) => {
       matchQuery.studentId = req.user.userId;
     }
 
-    // 👨‍🏫 If teacher wants to see only their own attendance entries
+    // 👨‍🏫 If teacher wants only their entries
     if (req.user.role === "teacher" && self === "true") {
       matchQuery.teacherId = req.user.userId;
     }
 
-    // 📅 Exact date or date range filter
+    // 📅 Date filter
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
-
       const end = endDate ? new Date(endDate) : new Date(startDate);
       end.setHours(23, 59, 59, 999);
-
       matchQuery.date = { $gte: start, $lte: end };
     }
 
-    const pipeline = [
+    // 🧱 Base pipeline with proper sorting before grouping
+    const basePipeline = [
       { $match: matchQuery },
+      // Sort by date descending first to ensure we get latest records
+      { $sort: { date: -1, _id: 1 } }, // Added _id as secondary sort for stability
+      {
+        $group: {
+          _id: "$studentId",
+          latestRecord: { $first: "$$ROOT" }, // This will now consistently get the most recent record
+        },
+      },
+      { $replaceRoot: { newRoot: "$latestRecord" } },
 
-      // 👦 Join student data
+      // 🔄 Lookup student
       {
         $lookup: {
           from: "users",
@@ -278,7 +286,7 @@ exports.getAttendanceHistory = async (req, res) => {
       },
       { $unwind: "$student" },
 
-      // 👨‍🏫 Join teacher data
+      // 🔄 Lookup teacher
       {
         $lookup: {
           from: "users",
@@ -290,11 +298,11 @@ exports.getAttendanceHistory = async (req, res) => {
       { $unwind: { path: "$teacher", preserveNullAndEmptyArrays: true } },
     ];
 
-    // 🏫 Filter by class (converted to Number)
+    // 🏫 Class filter after lookup
     if (classFilter) {
       const classNumber = parseInt(classFilter);
       if (!isNaN(classNumber)) {
-        pipeline.push({
+        basePipeline.push({
           $match: {
             "student.class": classNumber,
           },
@@ -302,9 +310,9 @@ exports.getAttendanceHistory = async (req, res) => {
       }
     }
 
-    // 🔍 Filter by name or roll number
+    // 🔍 Search filter after lookup
     if (search) {
-      pipeline.push({
+      basePipeline.push({
         $match: {
           $or: [
             { "student.name": { $regex: search, $options: "i" } },
@@ -314,24 +322,42 @@ exports.getAttendanceHistory = async (req, res) => {
       });
     }
 
-    // 📦 Total count for pagination
-    const totalResult = await Attendance.aggregate([
-      ...pipeline,
-      { $count: "total" },
-    ]);
+    // 🧮 Count total unique students
+    const countPipeline = [...basePipeline, { $count: "total" }];
+    const totalResult = await Attendance.aggregate(countPipeline);
     const total = totalResult[0]?.total || 0;
 
-    // 🚀 Add sorting and pagination
-    pipeline.push(
-      { $sort: { date: -1 } },
+    // 🔄 Paginate final list - no need to sort again as we sorted before grouping
+    const dataPipeline = [
+      ...basePipeline,
       { $skip: skip },
-      { $limit: limitNum }
+      { $limit: limitNum },
+    ];
+
+    const attendance = await Attendance.aggregate(dataPipeline);
+
+    // 🐞 Debug log
+    // console.log("🔍 DEBUG — Page:", pageNum);
+    // console.log(
+    //   "👥 Student Names:",
+    //   attendance.map((a) => a.student.name)
+    // );
+    // console.log(
+    //   "🆔 Student IDs:",
+    //   attendance.map((a) => a.studentId?.toString())
+    // );
+    // console.log("📊 Total Unique Students:", total);
+
+    console.log(
+      "Page",
+      pageNum,
+      "Student Names:",
+      attendance.map((a) => a.student.name)
     );
 
-    const attendance = await Attendance.aggregate(pipeline);
-
+    // 📦 Response
     res.json({
-      message: "Attendance history retrieved successfully",
+      message: "Unique student attendance records retrieved successfully",
       attendance,
       pagination: {
         page: pageNum,
@@ -341,7 +367,7 @@ exports.getAttendanceHistory = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching attendance history:", error);
+    console.error("❌ Error fetching attendance history:", error);
     res
       .status(500)
       .json({ error: "Server error retrieving attendance history" });
@@ -403,13 +429,24 @@ exports.getAttendanceStats = async (req, res) => {
       },
     ]);
 
+    const today = todayStats[0] || {
+      present: 0,
+      absent: 0,
+      late: 0,
+      total: 0,
+    };
+
+    // Calculate average attendance for today
+    const averageAttendance =
+      today.total > 0
+        ? ((today.present / today.total) * 100).toFixed(2)
+        : "0.00";
+
     res.json({
       daily: stats,
-      today: todayStats[0] || {
-        present: 0,
-        absent: 0,
-        leave: 0,
-        total: 0,
+      today: {
+        ...today,
+        averageAttendance: `${averageAttendance}%`,
       },
     });
   } catch (error) {
