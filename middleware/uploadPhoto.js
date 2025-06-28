@@ -24,7 +24,8 @@ const uploadUserPhoto = upload.single("photo");
 const resizeUserPhoto = async (req, res, next) => {
   if (!req.file) return next();
 
-  const identifier = req.body.email || req.user?.userId || "user";
+  const identifier = req.user?.userId || "user";
+
   const timestamp = Date.now();
   const filename = `user-${identifier}-${timestamp}.jpeg`;
 
