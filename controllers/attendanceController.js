@@ -243,17 +243,14 @@ exports.getAttendanceHistory = async (req, res) => {
 
     const matchQuery = {};
 
-    // 👤 Restrict student to their own records
     if (req.user.role === "student") {
       matchQuery.studentId = req.user.userId;
     }
 
-    // 👨‍🏫 If teacher wants only their entries
     if (req.user.role === "teacher" && self === "true") {
       matchQuery.teacherId = req.user.userId;
     }
 
-    // 📅 Date filter
     if (startDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
@@ -262,20 +259,16 @@ exports.getAttendanceHistory = async (req, res) => {
       matchQuery.date = { $gte: start, $lte: end };
     }
 
-    // 🧱 Base pipeline with proper sorting before grouping
     const basePipeline = [
       { $match: matchQuery },
-      // Sort by date descending first to ensure we get latest records
-      { $sort: { date: -1, _id: 1 } }, // Added _id as secondary sort for stability
       {
         $group: {
           _id: "$studentId",
-          latestRecord: { $first: "$$ROOT" }, // This will now consistently get the most recent record
+          latestRecord: { $first: "$$ROOT" },
         },
       },
       { $replaceRoot: { newRoot: "$latestRecord" } },
 
-      // 🔄 Lookup student
       {
         $lookup: {
           from: "users",
@@ -286,7 +279,6 @@ exports.getAttendanceHistory = async (req, res) => {
       },
       { $unwind: "$student" },
 
-      // 🔄 Lookup teacher
       {
         $lookup: {
           from: "users",
@@ -298,7 +290,6 @@ exports.getAttendanceHistory = async (req, res) => {
       { $unwind: { path: "$teacher", preserveNullAndEmptyArrays: true } },
     ];
 
-    // 🏫 Class filter after lookup
     if (classFilter) {
       const classNumber = parseInt(classFilter);
       if (!isNaN(classNumber)) {
@@ -310,7 +301,6 @@ exports.getAttendanceHistory = async (req, res) => {
       }
     }
 
-    // 🔍 Search filter after lookup
     if (search) {
       basePipeline.push({
         $match: {
@@ -327,35 +317,15 @@ exports.getAttendanceHistory = async (req, res) => {
     const totalResult = await Attendance.aggregate(countPipeline);
     const total = totalResult[0]?.total || 0;
 
-    // 🔄 Paginate final list - no need to sort again as we sorted before grouping
     const dataPipeline = [
       ...basePipeline,
+      { $sort: { date: -1, _id: 1 } }, // moved sort here
       { $skip: skip },
       { $limit: limitNum },
     ];
 
     const attendance = await Attendance.aggregate(dataPipeline);
 
-    // 🐞 Debug log
-    // console.log("🔍 DEBUG — Page:", pageNum);
-    // console.log(
-    //   "👥 Student Names:",
-    //   attendance.map((a) => a.student.name)
-    // );
-    // console.log(
-    //   "🆔 Student IDs:",
-    //   attendance.map((a) => a.studentId?.toString())
-    // );
-    // console.log("📊 Total Unique Students:", total);
-
-    console.log(
-      "Page",
-      pageNum,
-      "Student Names:",
-      attendance.map((a) => a.student.name)
-    );
-
-    // 📦 Response
     res.json({
       message: "Unique student attendance records retrieved successfully",
       attendance,
