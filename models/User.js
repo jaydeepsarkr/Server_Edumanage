@@ -72,6 +72,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  isDeleted: { type: Boolean, default: false },
   remark: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
@@ -87,5 +88,10 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.matchPassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
+
+// userSchema.pre(/^find/, function (next) {
+//   this.where({ isDeleted: false });
+//   next();
+// });
 
 module.exports = mongoose.model("User", userSchema);

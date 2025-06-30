@@ -22,6 +22,7 @@ exports.getStudents = async (req, res) => {
     // ✅ Build MongoDB query filter
     const filter = {
       role: "student",
+      isDeleted: { $ne: true },
       $or: [
         { name: searchRegex },
         { rollNumber: searchRegex },
