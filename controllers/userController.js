@@ -71,8 +71,13 @@ exports.editUser = async (req, res) => {
       "address",
       "class",
       "rollNumber",
-      "photo",
       "status",
+      "enrollmentDate",
+      "photo",
+      "aadhaarCard",
+      "birthCertificate",
+      "transferCertificate",
+      "marksheet",
     ];
     const updates = {};
 

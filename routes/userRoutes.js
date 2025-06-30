@@ -9,10 +9,21 @@ const {
   promoteStudentsByIds,
 } = require("../controllers/userController");
 
+const {
+  uploadUserDocuments,
+  resizeAndHandleUploads,
+} = require("../middleware/uploadPhoto");
+
 const authenticateToken = require("../middleware/authenticateToken");
 router.get("/users/:id", getUserById);
 
-router.put("/users/:id", authenticateToken, editUser);
+router.put(
+  "/users/:id",
+  authenticateToken,
+  uploadUserDocuments,
+  resizeAndHandleUploads,
+  editUser
+);
 router.delete("/users/:id", authenticateToken, deleteUser);
 
 router.get("/me", authenticateToken, getCurrentUser);

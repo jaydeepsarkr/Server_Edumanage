@@ -8,7 +8,7 @@ const {
 
 exports.registerUser = async (req, res) => {
   try {
-    // Validate with abortEarly: false to get all errors
+    // ✅ Validate input data
     const { error } = registerValidation.validate(req.body, {
       abortEarly: false,
     });
@@ -34,9 +34,14 @@ exports.registerUser = async (req, res) => {
       rollNumber,
       enrollmentDate,
       status,
+      photo,
+      aadhaarCard,
+      birthCertificate,
+      transferCertificate,
+      marksheet,
     } = req.body;
 
-    // Check for duplicate email
+    // ✅ Check for duplicate email
     const emailExists = await User.findOne({ email });
     if (emailExists) {
       return res.status(400).json({
@@ -46,7 +51,7 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Check for duplicate phone
+    // ✅ Check for duplicate phone
     const phoneExists = await User.findOne({ phone });
     if (phoneExists) {
       return res.status(400).json({
@@ -56,19 +61,7 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Handle uploaded photo if present
-    let photo = "";
-    if (req.file) {
-      const filename = `user-${Date.now()}.jpeg`;
-      await sharp(req.file.buffer)
-        .resize(500, 500)
-        .toFormat("jpeg")
-        .jpeg({ quality: 90 })
-        .toFile(`public/img/users/${filename}`);
-
-      photo = `img/users/${filename}`; // Store path relative to public
-    }
-
+    // ✅ Save new user
     const newUser = new User({
       name,
       email,
@@ -79,13 +72,19 @@ exports.registerUser = async (req, res) => {
       class: classLevel,
       rollNumber,
       enrollmentDate,
-      status,
-      photo, // store the filename
+      status: status || "active",
+
+      // ✅ Document paths from req.body
+      photo,
+      aadhaarCard,
+      birthCertificate,
+      transferCertificate,
+      marksheet,
     });
 
     await newUser.save();
 
-    res.json({ message: "User registered successfully." });
+    res.status(201).json({ message: "User registered successfully." });
   } catch (err) {
     console.error("Registration error:", err);
     res.status(500).json({ error: "Server error." });

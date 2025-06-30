@@ -72,6 +72,31 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
+  aadhaarCard: {
+    type: String,
+    required: function () {
+      return this.role === "student";
+    },
+    default: "undefined",
+  },
+
+  birthCertificate: {
+    type: String,
+    required: function () {
+      return this.role === "student";
+    },
+    default: "undefined",
+  },
+  transferCertificate: {
+    type: String,
+    default: "",
+  },
+
+  marksheet: {
+    type: String,
+    default: "",
+  },
+
   isDeleted: { type: Boolean, default: false },
   remark: { type: String },
   createdAt: { type: Date, default: Date.now },
