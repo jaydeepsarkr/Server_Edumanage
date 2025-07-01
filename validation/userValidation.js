@@ -1,9 +1,5 @@
 const Joi = require("joi");
 
-// ✅ Only allow PDF, JPEG, JPG for certificate documents
-const certificateFilePattern =
-  /^data:(application\/pdf|image\/jpeg|image\/jpg);base64,/;
-
 const registerValidation = Joi.object({
   name: Joi.string().min(3).max(50).required(),
   email: Joi.string().email().required(),
@@ -41,52 +37,22 @@ const registerValidation = Joi.object({
 
   status: Joi.string().valid("active", "leaved", "passout").optional(),
 
-  photo: Joi.string()
-    .pattern(/^data:image\/(jpeg|jpg);base64,/)
-    .optional()
-    .allow("")
-    .messages({
-      "string.pattern.base":
-        "Photo must be a base64 encoded image (JPEG or JPG).",
-    }),
-
   remark: Joi.string().optional().allow(""),
 
+  // ✅ These will be added to `req.body` by your upload middleware as file paths
+  photo: Joi.string().optional(),
   aadhaarCard: Joi.when("role", {
     is: "student",
-    then: Joi.string().pattern(certificateFilePattern).required().messages({
-      "string.pattern.base":
-        "Aadhaar card must be a base64 encoded .jpg, .jpeg, or .pdf file.",
-    }),
+    then: Joi.string().required(),
     otherwise: Joi.forbidden(),
   }),
-
   birthCertificate: Joi.when("role", {
     is: "student",
-    then: Joi.string().pattern(certificateFilePattern).required().messages({
-      "string.pattern.base":
-        "Birth certificate must be a base64 encoded .jpg, .jpeg, or .pdf file.",
-    }),
+    then: Joi.string().required(),
     otherwise: Joi.forbidden(),
   }),
-
-  transferCertificate: Joi.string()
-    .pattern(certificateFilePattern)
-    .optional()
-    .allow("")
-    .messages({
-      "string.pattern.base":
-        "Transfer certificate must be a base64 encoded .jpg, .jpeg, or .pdf file.",
-    }),
-
-  marksheet: Joi.string()
-    .pattern(certificateFilePattern)
-    .optional()
-    .allow("")
-    .messages({
-      "string.pattern.base":
-        "Marksheet must be a base64 encoded .jpg, .jpeg, or .pdf file.",
-    }),
+  transferCertificate: Joi.string().optional().allow(""),
+  marksheet: Joi.string().optional().allow(""),
 });
 
 const loginValidation = Joi.object({

@@ -1,5 +1,10 @@
 const User = require("../models/User");
 
+// Helper to build full URL from file path
+const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+const buildFullPath = (filePath) =>
+  filePath ? `${BASE_URL}/${filePath.replace(/^\/?public\//, "")}` : undefined;
+
 exports.getCurrentUser = async (req, res) => {
   try {
     const userId = req.user.userId; // From the token
@@ -40,13 +45,38 @@ exports.getStudentById = async (req, res) => {
 
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("_id name role");
+    const user = await User.findById(req.params.id).select(
+      "_id name email phone address class rollNumber status enrollmentDate photo aadhaarCard birthCertificate transferCertificate marksheet role"
+    );
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json(user); // Returns _id, name, role
+    // Sanitize fields: convert 'undefined' or 'null' strings to actual null values
+    const sanitize = (value) =>
+      value === "undefined" || value === "null" ? null : value;
+
+    // Construct sanitized user object
+    const sanitizedUser = {
+      _id: user._id,
+      name: user.name,
+      email: sanitize(user.email),
+      phone: sanitize(user.phone),
+      address: sanitize(user.address),
+      class: sanitize(user.class),
+      rollNumber: sanitize(user.rollNumber),
+      status: user.status,
+      enrollmentDate: user.enrollmentDate,
+      photo: sanitize(user.photo),
+      aadhaarCard: sanitize(user.aadhaarCard),
+      birthCertificate: sanitize(user.birthCertificate),
+      transferCertificate: sanitize(user.transferCertificate),
+      marksheet: sanitize(user.marksheet),
+      role: user.role,
+    };
+
+    res.json(sanitizedUser);
   } catch (error) {
     console.error("getUserById error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -54,6 +84,7 @@ exports.getUserById = async (req, res) => {
 };
 
 // ✅ PATCH/PUT: Edit user by ID (Teacher or self-edit)
+
 exports.editUser = async (req, res) => {
   try {
     const id = req.params.id;
@@ -63,7 +94,6 @@ exports.editUser = async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // ✅ Correct variable name
     const allowedUpdates = [
       "name",
       "email",
@@ -79,8 +109,8 @@ exports.editUser = async (req, res) => {
       "transferCertificate",
       "marksheet",
     ];
-    const updates = {};
 
+    const updates = {};
     for (const key of allowedUpdates) {
       if (req.body[key] !== undefined) {
         updates[key] = req.body[key];
@@ -96,7 +126,17 @@ exports.editUser = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json(updatedUser);
+    // ✅ Attach full URLs to file fields
+    const userWithFullPaths = {
+      ...updatedUser.toObject(),
+      photo: buildFullPath(updatedUser.photo),
+      aadhaarCard: buildFullPath(updatedUser.aadhaarCard),
+      birthCertificate: buildFullPath(updatedUser.birthCertificate),
+      transferCertificate: buildFullPath(updatedUser.transferCertificate),
+      marksheet: buildFullPath(updatedUser.marksheet),
+    };
+
+    res.json(userWithFullPaths);
   } catch (error) {
     console.error("editUser error:", error);
     res.status(500).json({ error: "Internal server error" });

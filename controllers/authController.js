@@ -61,6 +61,13 @@ exports.registerUser = async (req, res) => {
       });
     }
 
+    // ✅ Base URL for public file access
+    const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
+
+    // ✅ Convert relative file paths to full URLs
+    const buildFullPath = (filePath) =>
+      filePath ? `${BASE_URL}/${filePath.replace(/^public\//, "")}` : undefined;
+
     // ✅ Save new user
     const newUser = new User({
       name,
@@ -74,12 +81,12 @@ exports.registerUser = async (req, res) => {
       enrollmentDate,
       status: status || "active",
 
-      // ✅ Document paths from req.body
-      photo,
-      aadhaarCard,
-      birthCertificate,
-      transferCertificate,
-      marksheet,
+      // ✅ Document paths converted to public URLs
+      photo: buildFullPath(photo),
+      aadhaarCard: buildFullPath(aadhaarCard),
+      birthCertificate: buildFullPath(birthCertificate),
+      transferCertificate: buildFullPath(transferCertificate),
+      marksheet: buildFullPath(marksheet),
     });
 
     await newUser.save();
