@@ -351,41 +351,75 @@ exports.getAttendanceStats = async (req, res) => {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+    const classFilter = req.query.class ? parseInt(req.query.class) : null;
+    const dateQuery = req.query.date;
 
-    // Get stats for last 30 days
-    const stats = await Attendance.aggregate([
+    // 🔹 Determine date range
+    let startDate = new Date();
+    let endDate = new Date();
+
+    if (dateQuery) {
+      const parsedDate = new Date(dateQuery);
+      if (isNaN(parsedDate)) {
+        return res.status(400).json({ error: "Invalid date format" });
+      }
+      startDate = new Date(parsedDate.setHours(0, 0, 0, 0));
+      endDate = new Date(parsedDate.setHours(23, 59, 59, 999));
+    } else {
+      startDate.setHours(0, 0, 0, 0);
+      endDate.setHours(23, 59, 59, 999);
+    }
+
+    // 🔸 Get total students grouped by class
+    const studentMatch = {
+      role: "student",
+      isDeleted: { $ne: true },
+      ...(classFilter !== null && { class: classFilter }),
+    };
+
+    const students = await User.aggregate([
+      { $match: studentMatch },
       {
         $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$date" },
-          },
-          totalPresent: {
-            $sum: { $cond: [{ $eq: ["$status", "present"] }, 1, 0] },
-          },
-          totalAbsent: {
-            $sum: { $cond: [{ $eq: ["$status", "absent"] }, 1, 0] },
-          },
-          total: { $sum: 1 },
+          _id: "$class",
+          totalStudents: { $sum: 1 },
         },
       },
-      { $sort: { _id: -1 } },
-      { $limit: 30 },
     ]);
 
-    // Stats for today
-    const todayStats = await Attendance.aggregate([
+    const classStudentMap = {};
+    let totalStudents = 0;
+
+    students.forEach((cls) => {
+      classStudentMap[cls._id] = cls.totalStudents;
+      totalStudents += cls.totalStudents;
+    });
+
+    // 🔸 Get today's attendance
+    const todayAttendance = await Attendance.aggregate([
       {
         $match: {
-          date: { $gte: startOfToday, $lte: endOfToday },
+          date: { $gte: startDate, $lte: endDate },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "student",
+        },
+      },
+      { $unwind: "$student" },
+      {
+        $match: {
+          "student.isDeleted": { $ne: true },
+          ...(classFilter !== null && { "student.class": classFilter }),
         },
       },
       {
         $group: {
-          _id: null,
+          _id: "$student.class",
           present: {
             $sum: { $cond: [{ $eq: ["$status", "present"] }, 1, 0] },
           },
@@ -400,24 +434,97 @@ exports.getAttendanceStats = async (req, res) => {
       },
     ]);
 
-    const today = todayStats[0] || {
-      present: 0,
-      absent: 0,
-      late: 0,
-      total: 0,
-    };
+    const classAttendanceMap = {};
+    let totalPresent = 0;
+    let totalLate = 0;
+    let totalAbsent = 0;
 
-    // Calculate average attendance for today
-    const averageAttendance =
-      today.total > 0
-        ? ((today.present / today.total) * 100).toFixed(2)
+    todayAttendance.forEach((entry) => {
+      const classTotal = classStudentMap[entry._id] || 0;
+      const attendancePercent =
+        classTotal > 0
+          ? ((entry.present / classTotal) * 100).toFixed(2)
+          : "0.00";
+
+      classAttendanceMap[entry._id] = {
+        present: entry.present,
+        absent: entry.absent,
+        late: entry.late,
+        total: entry.total,
+        totalStudents: classTotal,
+        attendancePercentage: `${attendancePercent}%`,
+      };
+
+      totalPresent += entry.present;
+      totalLate += entry.late;
+      totalAbsent += entry.absent;
+    });
+
+    const overallAttendancePercentage =
+      totalStudents > 0
+        ? ((totalPresent / totalStudents) * 100).toFixed(2)
         : "0.00";
 
+    // 🔸 Get stats for past 7 days
+    const last7DaysStart = new Date();
+    last7DaysStart.setDate(last7DaysStart.getDate() - 6);
+    last7DaysStart.setHours(0, 0, 0, 0);
+
+    const weeklyStats = await Attendance.aggregate([
+      {
+        $match: {
+          date: { $gte: last7DaysStart, $lte: endDate },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "student",
+        },
+      },
+      { $unwind: "$student" },
+      {
+        $match: {
+          "student.isDeleted": { $ne: true },
+          ...(classFilter !== null && { "student.class": classFilter }),
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: { format: "%Y-%m-%d", date: "$date" },
+            },
+          },
+          totalPresent: {
+            $sum: { $cond: [{ $eq: ["$status", "present"] }, 1, 0] },
+          },
+          totalAbsent: {
+            $sum: { $cond: [{ $eq: ["$status", "absent"] }, 1, 0] },
+          },
+          totalLate: {
+            $sum: { $cond: [{ $eq: ["$status", "late"] }, 1, 0] },
+          },
+        },
+      },
+      { $sort: { "_id.date": 1 } },
+    ]);
+
+    // ✅ Final Response
     res.json({
-      daily: stats,
+      daily: weeklyStats,
       today: {
-        ...today,
-        averageAttendance: `${averageAttendance}%`,
+        date: startDate.toISOString().split("T")[0],
+        classWise: classAttendanceMap,
+        overall: {
+          totalStudents,
+          totalPresent,
+          totalAbsent,
+          totalLate,
+          overallAttendancePercentage: `${overallAttendancePercentage}%`,
+        },
       },
     });
   } catch (error) {

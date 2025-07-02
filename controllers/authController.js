@@ -118,7 +118,7 @@ exports.loginUser = async (req, res) => {
         photo: user.photo || null,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "30d" }
     );
 
     res.json({
