@@ -26,4 +26,10 @@ router.get(
   attendanceController.getAttendanceStats
 );
 
+router.get(
+  "/attendance/percentage/today",
+  authenticateToken,
+  attendanceController.getTodaysAttendancePercentage
+);
+
 module.exports = router;

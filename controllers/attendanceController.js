@@ -350,7 +350,7 @@ exports.getAttendanceStats = async (req, res) => {
     if (req.user.role !== "teacher") {
       return res.status(403).json({ error: "Access denied" });
     }
-
+    console.log("📥 Incoming query params:", req.query);
     const classFilter = req.query.class ? parseInt(req.query.class) : null;
     const dateQuery = req.query.date;
 
@@ -358,16 +358,16 @@ exports.getAttendanceStats = async (req, res) => {
     let startDate, endDate;
 
     if (dateQuery) {
-      const parsedDate = new Date(dateQuery);
-      if (isNaN(parsedDate)) {
+      try {
+        const parsedDate = new Date(dateQuery);
+        startDate = new Date(parsedDate);
+        startDate.setHours(0, 0, 0, 0);
+
+        endDate = new Date(parsedDate);
+        endDate.setHours(23, 59, 59, 999);
+      } catch {
         return res.status(400).json({ error: "Invalid date format" });
       }
-
-      startDate = new Date(parsedDate);
-      startDate.setHours(0, 0, 0, 0);
-
-      endDate = new Date(parsedDate);
-      endDate.setHours(23, 59, 59, 999);
     } else {
       const today = new Date();
       startDate = new Date(today);
@@ -468,7 +468,7 @@ exports.getAttendanceStats = async (req, res) => {
         ? ((totalPresent / totalStudents) * 100).toFixed(2)
         : "0.00";
 
-    // Weekly stats — still keep date filter early for range
+    // Weekly stats
     const last7DaysStart = new Date();
     last7DaysStart.setDate(last7DaysStart.getDate() - 6);
     last7DaysStart.setHours(0, 0, 0, 0);
@@ -511,7 +511,6 @@ exports.getAttendanceStats = async (req, res) => {
       { $sort: { "_id.date": 1 } },
     ]);
 
-    // Final response
     res.json({
       daily: weeklyStats,
       today: {
@@ -526,18 +525,46 @@ exports.getAttendanceStats = async (req, res) => {
         },
       },
     });
-
-    // Debugging logs
-    console.log("Query params:", req.query);
-    console.log("Parsed classFilter:", classFilter, "DateQuery:", dateQuery);
-    console.log(
-      "Date range:",
-      startDate.toISOString(),
-      "→",
-      endDate.toISOString()
-    );
   } catch (error) {
     console.error("❌ Error fetching attendance stats:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+exports.getTodaysAttendancePercentage = async (req, res) => {
+  try {
+    if (req.user.role !== "teacher") {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const today = new Date();
+    const startDate = new Date(today.setHours(0, 0, 0, 0));
+    const endDate = new Date(today.setHours(23, 59, 59, 999));
+
+    // Fetch total students
+    const totalStudents = await User.countDocuments({
+      role: "student",
+      isDeleted: { $ne: true },
+    });
+
+    // Fetch today's present students
+    const presentCount = await Attendance.countDocuments({
+      status: "present",
+      date: { $gte: startDate, $lte: endDate },
+    });
+
+    const percentage =
+      totalStudents > 0
+        ? ((presentCount / totalStudents) * 100).toFixed(2)
+        : "0.00";
+
+    res.json({
+      date: new Date().toISOString().split("T")[0],
+      totalStudents,
+      presentToday: presentCount,
+      attendancePercentage: `${percentage}%`,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching today's attendance percentage:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
