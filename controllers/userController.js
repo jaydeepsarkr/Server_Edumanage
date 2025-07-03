@@ -1,9 +1,105 @@
+const sharp = require("sharp");
 const User = require("../models/User");
+const { base64ToBuffer } = require("../middleware/uploadPhoto");
+const uploadToCloudinary = require("../utils/cloudinaryUtils");
 
-// Helper to build full URL from file path
-const BASE_URL = process.env.BASE_URL || "http://localhost:5000";
-const buildFullPath = (filePath) =>
-  filePath ? `${BASE_URL}/${filePath.replace(/^\/?public\//, "")}` : undefined;
+exports.editUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    // ✅ Only allow teachers or the user themself
+    if (req.user.role !== "teacher" && req.user.userId !== id) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const allowedFields = [
+      "name",
+      "email",
+      "phone",
+      "address",
+      "class",
+      "rollNumber",
+      "status",
+      "enrollmentDate",
+      "photo",
+      "aadhaarCard",
+      "birthCertificate",
+      "transferCertificate",
+      "marksheet",
+    ];
+
+    const docFolders = {
+      photo: "users/profiles",
+      aadhaarCard: "users/documents/aadhaar",
+      birthCertificate: "users/documents/birth_certs",
+      transferCertificate: "users/documents/transfer_certs",
+      marksheet: "users/documents/marksheets",
+    };
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      let buffer = null;
+
+      // ✅ Check for uploaded file from Multer
+      if (req.files?.[field]?.[0]) {
+        buffer = req.files[field][0].buffer;
+      }
+
+      // ✅ Check for base64 string
+      if (
+        !buffer &&
+        typeof req.body[field] === "string" &&
+        req.body[field].startsWith("data:")
+      ) {
+        buffer = base64ToBuffer(req.body[field]);
+      }
+
+      // ✅ Upload file if we have a buffer
+      if (buffer) {
+        // Resize photo if needed
+        if (field === "photo") {
+          buffer = await sharp(buffer)
+            .resize(500, 500)
+            .jpeg({ quality: 90 })
+            .toBuffer();
+        }
+
+        const url = await uploadToCloudinary({
+          buffer,
+          originalname: `${field}_${Date.now()}.jpg`,
+          mimetype: "image/jpeg",
+          fieldname: field,
+        });
+
+        updates[field] = url;
+      }
+
+      // ✅ Simple text field (non-file, non-base64)
+      else if (
+        req.body[field] !== undefined &&
+        (typeof req.body[field] !== "string" ||
+          !req.body[field].startsWith("data:"))
+      ) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(id, updates, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error("editUser error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
 
 exports.getCurrentUser = async (req, res) => {
   try {
@@ -79,66 +175,6 @@ exports.getUserById = async (req, res) => {
     res.json(sanitizedUser);
   } catch (error) {
     console.error("getUserById error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-// ✅ PATCH/PUT: Edit user by ID (Teacher or self-edit)
-
-exports.editUser = async (req, res) => {
-  try {
-    const id = req.params.id;
-
-    // ✅ Only allow teacher or user themself
-    if (req.user.role !== "teacher" && req.user.userId !== id) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-
-    const allowedUpdates = [
-      "name",
-      "email",
-      "phone",
-      "address",
-      "class",
-      "rollNumber",
-      "status",
-      "enrollmentDate",
-      "photo",
-      "aadhaarCard",
-      "birthCertificate",
-      "transferCertificate",
-      "marksheet",
-    ];
-
-    const updates = {};
-    for (const key of allowedUpdates) {
-      if (req.body[key] !== undefined) {
-        updates[key] = req.body[key];
-      }
-    }
-
-    const updatedUser = await User.findByIdAndUpdate(id, updates, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // ✅ Attach full URLs to file fields
-    const userWithFullPaths = {
-      ...updatedUser.toObject(),
-      photo: buildFullPath(updatedUser.photo),
-      aadhaarCard: buildFullPath(updatedUser.aadhaarCard),
-      birthCertificate: buildFullPath(updatedUser.birthCertificate),
-      transferCertificate: buildFullPath(updatedUser.transferCertificate),
-      marksheet: buildFullPath(updatedUser.marksheet),
-    };
-
-    res.json(userWithFullPaths);
-  } catch (error) {
-    console.error("editUser error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };

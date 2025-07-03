@@ -2,18 +2,15 @@ const express = require("express");
 const { registerUser, loginUser } = require("../controllers/authController");
 const {
   uploadUserDocuments,
-  resizeAndHandleUploads,
+  processUploads, // ← Add this
 } = require("../middleware/uploadPhoto");
 
 const router = express.Router();
 
-router.post(
-  "/register",
-  uploadUserDocuments,
-  resizeAndHandleUploads,
-  registerUser
-);
+// Register route with file upload + resizing
+router.post("/register", uploadUserDocuments, processUploads, registerUser);
 
+// Login route (no upload)
 router.post("/login", loginUser);
 
 module.exports = router;

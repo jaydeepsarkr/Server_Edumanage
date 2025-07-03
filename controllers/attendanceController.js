@@ -354,23 +354,30 @@ exports.getAttendanceStats = async (req, res) => {
     const classFilter = req.query.class ? parseInt(req.query.class) : null;
     const dateQuery = req.query.date;
 
-    // 🔹 Determine date range
-    let startDate = new Date();
-    let endDate = new Date();
+    // Set default or specific date range
+    let startDate, endDate;
 
     if (dateQuery) {
       const parsedDate = new Date(dateQuery);
       if (isNaN(parsedDate)) {
         return res.status(400).json({ error: "Invalid date format" });
       }
-      startDate = new Date(parsedDate.setHours(0, 0, 0, 0));
-      endDate = new Date(parsedDate.setHours(23, 59, 59, 999));
-    } else {
+
+      startDate = new Date(parsedDate);
       startDate.setHours(0, 0, 0, 0);
+
+      endDate = new Date(parsedDate);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      const today = new Date();
+      startDate = new Date(today);
+      startDate.setHours(0, 0, 0, 0);
+
+      endDate = new Date(today);
       endDate.setHours(23, 59, 59, 999);
     }
 
-    // 🔸 Get total students grouped by class
+    // Get total students grouped by class
     const studentMatch = {
       role: "student",
       isDeleted: { $ne: true },
@@ -395,13 +402,8 @@ exports.getAttendanceStats = async (req, res) => {
       totalStudents += cls.totalStudents;
     });
 
-    // 🔸 Get today's attendance
+    // Today's attendance — match by class and date AFTER lookup
     const todayAttendance = await Attendance.aggregate([
-      {
-        $match: {
-          date: { $gte: startDate, $lte: endDate },
-        },
-      },
       {
         $lookup: {
           from: "users",
@@ -415,6 +417,7 @@ exports.getAttendanceStats = async (req, res) => {
         $match: {
           "student.isDeleted": { $ne: true },
           ...(classFilter !== null && { "student.class": classFilter }),
+          date: { $gte: startDate, $lte: endDate },
         },
       },
       {
@@ -465,17 +468,12 @@ exports.getAttendanceStats = async (req, res) => {
         ? ((totalPresent / totalStudents) * 100).toFixed(2)
         : "0.00";
 
-    // 🔸 Get stats for past 7 days
+    // Weekly stats — still keep date filter early for range
     const last7DaysStart = new Date();
     last7DaysStart.setDate(last7DaysStart.getDate() - 6);
     last7DaysStart.setHours(0, 0, 0, 0);
 
     const weeklyStats = await Attendance.aggregate([
-      {
-        $match: {
-          date: { $gte: last7DaysStart, $lte: endDate },
-        },
-      },
       {
         $lookup: {
           from: "users",
@@ -489,6 +487,7 @@ exports.getAttendanceStats = async (req, res) => {
         $match: {
           "student.isDeleted": { $ne: true },
           ...(classFilter !== null && { "student.class": classFilter }),
+          date: { $gte: last7DaysStart, $lte: endDate },
         },
       },
       {
@@ -512,7 +511,7 @@ exports.getAttendanceStats = async (req, res) => {
       { $sort: { "_id.date": 1 } },
     ]);
 
-    // ✅ Final Response
+    // Final response
     res.json({
       daily: weeklyStats,
       today: {
@@ -527,8 +526,18 @@ exports.getAttendanceStats = async (req, res) => {
         },
       },
     });
+
+    // Debugging logs
+    console.log("Query params:", req.query);
+    console.log("Parsed classFilter:", classFilter, "DateQuery:", dateQuery);
+    console.log(
+      "Date range:",
+      startDate.toISOString(),
+      "→",
+      endDate.toISOString()
+    );
   } catch (error) {
-    console.error("Error fetching attendance stats:", error);
-    res.status(500).json({ error: error.message });
+    console.error("❌ Error fetching attendance stats:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 };

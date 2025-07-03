@@ -1,109 +1,120 @@
 const multer = require("multer");
 const sharp = require("sharp");
-const fs = require("fs");
 const path = require("path");
-const User = require("../models/User");
 
+// Allowed fields
+const allowedFields = [
+  "photo",
+  "aadhaarCard",
+  "birthCertificate",
+  "transferCertificate",
+  "marksheet",
+];
+
+// Multer memory storage
 const multerStorage = multer.memoryStorage();
 
+// ✅ Allow image for photo; image or PDF for documents
 const multerFilter = (req, file, cb) => {
-  const isImage = file.mimetype.startsWith("image");
+  const isImage = file.mimetype.startsWith("image/");
   const isPDF = file.mimetype === "application/pdf";
+  const field = file.fieldname;
+  const ext = path.extname(file.originalname).toLowerCase();
 
-  const allowedFields = [
-    "photo",
-    "aadhaarCard",
-    "birthCertificate",
-    "transferCertificate",
-    "marksheet",
-  ];
-
-  if (
-    allowedFields.includes(file.fieldname) &&
-    (isImage || (file.fieldname !== "photo" && isPDF))
-  ) {
-    cb(null, true);
-  } else {
-    cb(new Error("Invalid file type or field."), false);
+  if (!allowedFields.includes(field)) {
+    return cb(new Error(`Unknown upload field "${field}"`), false);
   }
+
+  // ✅ "photo" field must be image
+  if (field === "photo" && isImage) return cb(null, true);
+
+  // ✅ Other fields can be image or PDF
+  if (field !== "photo" && (isImage || isPDF)) return cb(null, true);
+
+  return cb(
+    new Error(`Invalid file type or extension "${ext}" for field "${field}"`),
+    false
+  );
 };
 
+// Multer upload config
 const upload = multer({
   storage: multerStorage,
   fileFilter: multerFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
-const uploadUserDocuments = upload.fields([
-  { name: "photo", maxCount: 1 },
-  { name: "aadhaarCard", maxCount: 1 },
-  { name: "birthCertificate", maxCount: 1 },
-  { name: "transferCertificate", maxCount: 1 },
-  { name: "marksheet", maxCount: 1 },
-]);
+// Handle multiple fields
+const uploadUserDocuments = upload.fields(
+  allowedFields.map((name) => ({ name, maxCount: 1 }))
+);
 
-const resizeAndHandleUploads = async (req, res, next) => {
-  if (!req.files) return next();
+// Resize only photo
+const processUploads = async (req, res, next) => {
+  try {
+    if (req.files?.photo?.[0]) {
+      const file = req.files.photo[0];
+      const resizedBuffer = await sharp(file.buffer)
+        .resize(500, 500)
+        .jpeg({ quality: 90 })
+        .toBuffer();
 
-  const identifier =
-    req.user?.userId || req.body.email?.split("@")[0] || "user";
-  const timestamp = Date.now();
-  const processed = new Set();
-
-  // Helper for saving non-photo files
-  const saveFile = (field, folder, prefix) => {
-    if (req.files[field]?.length && !processed.has(field)) {
-      processed.add(field);
-
-      const ext =
-        req.files[field][0].mimetype === "application/pdf" ? "pdf" : "jpeg";
-      const filename = `${prefix}-${identifier}-${timestamp}.${ext}`;
-      const relativePath = `${folder}/${filename}`;
-      const fullPath = path.join(__dirname, `../public/${relativePath}`);
-
-      fs.writeFileSync(fullPath, req.files[field][0].buffer);
-      req.body[field] = relativePath;
-    }
-  };
-
-  // ✅ Handle photo (with sharp resize)
-  if (req.files.photo?.length && !processed.has("photo")) {
-    processed.add("photo");
-
-    const photoFilename = `user-${identifier}-${timestamp}.jpeg`;
-    const photoRelativePath = `img/users/${photoFilename}`;
-    const photoFullPath = path.join(
-      __dirname,
-      `../public/${photoRelativePath}`
-    );
-
-    // Remove old photo if exists
-    const existingUser = await User.findById(req.user?.userId);
-    if (
-      existingUser?.photo &&
-      fs.existsSync(path.join(__dirname, `../public/${existingUser.photo}`))
-    ) {
-      fs.unlinkSync(path.join(__dirname, `../public/${existingUser.photo}`));
+      req.files.photo[0] = {
+        ...file,
+        buffer: resizedBuffer,
+        size: resizedBuffer.length,
+      };
     }
 
-    await sharp(req.files.photo[0].buffer)
-      .resize(500, 500)
-      .toFormat("jpeg")
-      .jpeg({ quality: 90 })
-      .toFile(photoFullPath);
+    // Debug log
+    if (req.files) {
+      Object.entries(req.files).forEach(([field, files]) => {
+        files.forEach((file) => {
+          console.log(`✅ Uploaded ${field}:`, {
+            name: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+          });
+        });
+      });
+    }
 
-    req.body.photo = photoRelativePath;
+    next();
+  } catch (err) {
+    console.error("❌ File processing error:", err);
+    res.status(500).json({ error: "File processing failed" });
   }
+};
 
-  // ✅ Save remaining docs
-  saveFile("aadhaarCard", "adharupload", "aadhaar");
-  saveFile("birthCertificate", "birthupload", "birth");
-  saveFile("transferCertificate", "transferupload", "transfer");
-  saveFile("marksheet", "marksheetupload", "marksheet");
+// ✅ Fix: Include fieldname for folder mapping
+const normalizeFiles = (req) => {
+  const normalized = {};
+  for (const field in req.files) {
+    if (req.files[field]?.[0]) {
+      const file = req.files[field][0];
+      normalized[field] = {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        buffer: file.buffer,
+        fieldname: field, // ✅ This is critical
+      };
+    }
+  }
+  return normalized;
+};
 
-  next();
+// Optional: Convert base64 to Buffer (if needed)
+const base64ToBuffer = (base64String) => {
+  const matches = base64String.match(/^data:(.+);base64,(.+)$/);
+  if (!matches || matches.length !== 3) {
+    throw new Error("Invalid base64 string format.");
+  }
+  return Buffer.from(matches[2], "base64");
 };
 
 module.exports = {
   uploadUserDocuments,
-  resizeAndHandleUploads,
+  processUploads,
+  normalizeFiles,
+  base64ToBuffer,
 };
