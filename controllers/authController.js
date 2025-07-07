@@ -28,36 +28,18 @@ exports.registerUser = async (req, res) => {
       marksheet: "users/documents/marksheets",
     };
 
-    const uploads = {};
-    const normalizedFiles = normalizeFiles(req); // map multer files to { field: { buffer, mimetype, originalname } }
+    const normalizedFiles = normalizeFiles(req); // Extract files from multer
+    const validationInput = { ...req.body };
 
+    // Simulate file URLs for validation
     for (const field of fields) {
-      let file;
-
-      // Check multer file upload
-      if (normalizedFiles[field]) {
-        file = normalizedFiles[field];
+      if (normalizedFiles[field] || req.body[field]?.startsWith("data:")) {
+        validationInput[field] = "https://dummy.url/fakefile.jpg";
       }
-
-      // Check base64 fallback (optional use-case)
-      else if (req.body[field]?.startsWith("data:")) {
-        file = {
-          buffer: base64ToBuffer(req.body[field]),
-          originalname: `${field}.jpeg`, // fallback filename for base64
-          mimetype: field === "photo" ? "image/jpeg" : "application/pdf", // guess based on field
-        };
-      }
-
-      if (!file) continue;
-
-      const url = await uploadToCloudinary(file, docFolders[field]);
-
-      req.body[field] = url;
-      uploads[field] = url;
     }
 
-    // ✅ Validate full body now (after uploads)
-    const { error } = registerValidation.validate(req.body, {
+    // ✅ Validate before uploading
+    const { error } = registerValidation.validate(validationInput, {
       abortEarly: false,
     });
 
@@ -70,19 +52,8 @@ exports.registerUser = async (req, res) => {
       return res.status(400).json({ errors });
     }
 
-    const {
-      name,
-      email,
-      password,
-      role,
-      phone,
-      address,
-      class: classLevel,
-      rollNumber,
-      enrollmentDate,
-      status,
-    } = req.body;
-
+    // ✅ Check for duplicate email or phone before uploading
+    const { email, phone } = req.body;
     const [emailExists, phoneExists] = await Promise.all([
       User.findOne({ email }),
       User.findOne({ phone }),
@@ -96,6 +67,44 @@ exports.registerUser = async (req, res) => {
         },
       });
     }
+
+    // ✅ Upload files after validation and uniqueness check
+    const uploads = {};
+
+    for (const field of fields) {
+      let file;
+
+      if (normalizedFiles[field]) {
+        file = {
+          ...normalizedFiles[field],
+          fieldname: field, // ✅ required for Cloudinary folder mapping
+        };
+      } else if (req.body[field]?.startsWith("data:")) {
+        file = {
+          buffer: base64ToBuffer(req.body[field]),
+          originalname: `${field}.jpeg`,
+          mimetype: field === "photo" ? "image/jpeg" : "application/pdf",
+          fieldname: field,
+        };
+      }
+
+      if (!file) continue;
+
+      const url = await uploadToCloudinary(file);
+      req.body[field] = url;
+      uploads[field] = url;
+    }
+
+    const {
+      name,
+      password,
+      role,
+      address,
+      class: classLevel,
+      rollNumber,
+      enrollmentDate,
+      status,
+    } = req.body;
 
     const schoolId = req.user.schoolId; // ✅ from token
     if (!schoolId) {
@@ -114,7 +123,7 @@ exports.registerUser = async (req, res) => {
       enrollmentDate,
       status: status || "active",
       schoolId,
-      ...uploads, // photos/documents urls
+      ...uploads,
     });
 
     await newUser.save();
@@ -125,6 +134,7 @@ exports.registerUser = async (req, res) => {
     res.status(500).json({ error: "Server error." });
   }
 };
+
 // 🔐 Login Controller (unchanged)
 exports.loginUser = async (req, res) => {
   try {

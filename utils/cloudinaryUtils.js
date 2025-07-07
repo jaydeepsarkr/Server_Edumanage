@@ -27,7 +27,7 @@ const uploadToCloudinary = async (file) => {
     const public_id = originalname.replace(/\.[^/.]+$/, "");
     const folder = fieldToFolderMap[fieldname] || "uploads/others";
 
-    console.log(`📤 Uploading ${originalname} to folder: ${folder}`);
+    // console.log(`📤 Uploading ${originalname} to folder: ${folder}`);
 
     const result = await new Promise((resolve, reject) => {
       cloudinary.uploader

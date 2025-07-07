@@ -67,17 +67,17 @@ const processUploads = async (req, res, next) => {
     }
 
     // Debug log
-    if (req.files) {
-      Object.entries(req.files).forEach(([field, files]) => {
-        files.forEach((file) => {
-          console.log(`✅ Uploaded ${field}:`, {
-            name: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
-          });
-        });
-      });
-    }
+    // if (req.files) {
+    //   Object.entries(req.files).forEach(([field, files]) => {
+    //     files.forEach((file) => {
+    //       console.log(`✅ Uploading... ${field}:`, {
+    //         name: file.originalname,
+    //         mimetype: file.mimetype,
+    //         size: file.size,
+    //       });
+    //     });
+    //   });
+    // }
 
     next();
   } catch (err) {
