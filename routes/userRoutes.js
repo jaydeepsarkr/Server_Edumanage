@@ -18,7 +18,7 @@ const {
 const authenticateToken = require("../middleware/authenticateToken");
 
 // ✅ Get a specific user by ID
-router.get("/users/:id", getUserById);
+router.get("/users/:id", authenticateToken, getUserById);
 
 // ✅ Update user (edit) with file upload & resizing
 router.put(
