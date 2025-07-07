@@ -1,6 +1,5 @@
 const jwt = require("jsonwebtoken");
-const User = require("../models/User"); // Adjust path as needed
-
+const User = require("../models/User");
 module.exports = async function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -13,7 +12,7 @@ module.exports = async function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await User.findById(decoded.userId);
-    if (!user) {
+    if (!user || user.isDeleted) {
       return res.status(401).json({ error: "User no longer exists" });
     }
 
@@ -22,6 +21,7 @@ module.exports = async function authenticateToken(req, res, next) {
       username: user.username,
       role: user.role,
       photo: user.photo,
+      schoolId: user.schoolId,
     };
 
     next();

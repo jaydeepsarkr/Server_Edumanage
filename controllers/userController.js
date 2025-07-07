@@ -7,9 +7,22 @@ exports.editUser = async (req, res) => {
   try {
     const id = req.params.id;
 
-    // ✅ Only allow teachers or the user themself
-    if (req.user.role !== "teacher" && req.user.userId !== id) {
+    // ✅ Only teachers or admins are allowed
+    if (req.user.role !== "teacher" && req.user.role !== "admin") {
       return res.status(403).json({ error: "Access denied" });
+    }
+
+    // ✅ Fetch the user to be edited
+    const userToEdit = await User.findById(id);
+    if (!userToEdit) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // ✅ Ensure both users belong to the same school
+    if (userToEdit.schoolId?.toString() !== req.user.schoolId?.toString()) {
+      return res
+        .status(403)
+        .json({ error: "You can only edit users from your school" });
     }
 
     const allowedFields = [
@@ -126,13 +139,17 @@ exports.getStudentById = async (req, res) => {
       return res.status(403).json({ error: "Access denied. Teachers only." });
     }
 
-    const student = await User.findById(req.params.id);
+    const student = await User.findOne({
+      _id: req.params.id,
+      role: "student",
+      schoolId: req.user.schoolId, // ✅ Match schoolId
+    });
 
-    if (!student || student.role !== "student") {
+    if (!student) {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    res.json({ name: student.name }); // You can return more fields if needed
+    res.json({ name: student.name }); // Add more fields as needed
   } catch (error) {
     console.error("getStudentById error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -141,7 +158,15 @@ exports.getStudentById = async (req, res) => {
 
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select(
+    // ✅ Only allow access to teachers or admins
+    if (!["teacher", "admin"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const user = await User.findOne({
+      _id: req.params.id,
+      schoolId: req.user.schoolId, // ✅ Enforce same school access
+    }).select(
       "_id name email phone address class rollNumber status enrollmentDate photo aadhaarCard birthCertificate transferCertificate marksheet role"
     );
 
@@ -149,11 +174,11 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Sanitize fields: convert 'undefined' or 'null' strings to actual null values
+    // ✅ Sanitize helper
     const sanitize = (value) =>
       value === "undefined" || value === "null" ? null : value;
 
-    // Construct sanitized user object
+    // ✅ Build sanitized response
     const sanitizedUser = {
       _id: user._id,
       name: user.name,
@@ -182,14 +207,23 @@ exports.getUserById = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findByIdAndUpdate(
-      id,
+
+    // ✅ Only allow teachers or admins
+    if (!["teacher", "admin"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    // ✅ Ensure the user being deleted belongs to the same school
+    const user = await User.findOneAndUpdate(
+      { _id: id, schoolId: req.user.schoolId },
       { isDeleted: true },
       { new: true }
     );
 
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res
+        .status(404)
+        .json({ error: "User not found or not in your school" });
     }
 
     res.json({ message: "User deleted successfully", user });
@@ -203,26 +237,31 @@ exports.promoteStudentsByIds = async (req, res) => {
   try {
     const { studentIds } = req.body;
 
-    // Check for permissions
+    // ✅ Role check
     if (!["teacher", "admin"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // Validate input
+    // ✅ Input validation
     if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({ error: "No valid student IDs provided." });
     }
 
+    // ✅ Fetch students belonging to the same school
     const students = await User.find({
       _id: { $in: studentIds },
       role: "student",
       isDeleted: { $ne: true },
+      schoolId: req.user.schoolId, // ✅ enforce same school
     });
 
     if (!students.length) {
-      return res.status(404).json({ error: "No matching students found." });
+      return res
+        .status(404)
+        .json({ error: "No matching students found in your school." });
     }
 
+    // ✅ Prepare promotion logic
     const bulkOps = students.map((student) => {
       if (student.class === 10) {
         return {
@@ -241,6 +280,7 @@ exports.promoteStudentsByIds = async (req, res) => {
       }
     });
 
+    // ✅ Perform bulk update
     const result = await User.bulkWrite(bulkOps);
 
     res.status(200).json({

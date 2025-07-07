@@ -21,10 +21,13 @@ const registerValidation = Joi.object({
     "string.empty": "Password is required.",
   }),
 
-  role: Joi.string().valid("student", "parent", "teacher").required().messages({
-    "any.only": "Role must be either student, parent, or teacher.",
-    "string.empty": "Role is required.",
-  }),
+  role: Joi.string()
+    .valid("student", "parent", "teacher", "admin")
+    .required()
+    .messages({
+      "any.only": "Role must be either student, parent, or teacher.",
+      "string.empty": "Role is required.",
+    }),
 
   phone: Joi.string().pattern(indianPhonePattern).required().messages({
     "string.pattern.base":
@@ -35,6 +38,11 @@ const registerValidation = Joi.object({
   address: Joi.string().min(5).required().messages({
     "string.min": "Address must be at least 5 characters.",
     "string.empty": "Address is required.",
+  }),
+
+  schoolId: Joi.forbidden().messages({
+    "any.unknown":
+      "schoolId should not be sent in request body. It is auto-injected from token.",
   }),
 
   // Conditional Fields for Students Only

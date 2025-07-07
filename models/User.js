@@ -97,6 +97,12 @@ const userSchema = new mongoose.Schema({
     default: "",
   },
 
+  schoolId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "School",
+    required: true, // Every user must belong to a school
+  },
+
   isDeleted: { type: Boolean, default: false },
   remark: { type: String },
   createdAt: { type: Date, default: Date.now },

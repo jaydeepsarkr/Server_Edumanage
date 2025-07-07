@@ -4,7 +4,7 @@ const User = require("../models/User");
 exports.getStudents = async (req, res) => {
   try {
     // ✅ Only allow teachers to access this route
-    if (req.user.role !== "teacher") {
+    if (!["teacher", "admin"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -23,6 +23,7 @@ exports.getStudents = async (req, res) => {
     const filter = {
       role: "student",
       isDeleted: { $ne: true },
+      schoolId: req.user.schoolId,
       $or: [
         { name: searchRegex },
         { rollNumber: searchRegex },
@@ -102,7 +103,7 @@ exports.getStudents = async (req, res) => {
 exports.markAttendanceManual = async (req, res) => {
   try {
     // ✅ Ensure only teachers can mark attendance
-    if (req.user.role !== "teacher") {
+    if (!["teacher", "admin"].includes(req.user.role)) {
       return res
         .status(403)
         .json({ error: "Only teachers can mark attendance" });
@@ -169,6 +170,7 @@ exports.markAttendanceManual = async (req, res) => {
       markedAt: new Date(),
       method: "manual",
       attendanceByNFC, // ✅ from frontend
+      schoolId: req.user.schoolId,
     });
 
     await attendance.save();
@@ -179,49 +181,6 @@ exports.markAttendanceManual = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in markAttendanceManual:", error);
-    res.status(500).json({ error: error.message });
-  }
-};
-exports.markAttendanceViaUrl = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const student = await User.findOne({ _id: studentId, role: "student" });
-    if (!student) return res.status(404).json({ error: "Student not found" });
-
-    const existingAttendance = await Attendance.findOne({
-      studentId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-    });
-
-    if (existingAttendance) {
-      return res.json({
-        message: "Attendance already marked",
-        attendance: existingAttendance,
-      });
-    }
-
-    const attendance = new Attendance({
-      studentId,
-      teacherId: null,
-      class: student.class || 1,
-      subject: "General",
-      status: "present",
-      date: startOfDay,
-      markedBy: "auto",
-      markedAt: new Date(),
-      method: "url",
-      attendanceByNFC: true,
-    });
-
-    await attendance.save();
-    res.json({ message: "Attendance marked", attendance });
-  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
@@ -238,15 +197,16 @@ exports.getAttendanceHistory = async (req, res) => {
       self,
     } = req.query;
 
+    // ✅ Allow only admin and teacher
+    if (!["teacher", "admin"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const matchQuery = {};
-
-    if (req.user.role === "student") {
-      matchQuery.studentId = req.user.userId;
-    }
+    const matchQuery = { schoolId: req.user.schoolId };
 
     if (req.user.role === "teacher" && self === "true") {
       matchQuery.teacherId = req.user.userId;
@@ -279,6 +239,13 @@ exports.getAttendanceHistory = async (req, res) => {
         },
       },
       { $unwind: "$student" },
+
+      // ✅ Ensure students are from same school
+      {
+        $match: {
+          "student.schoolId": req.user.schoolId,
+        },
+      },
 
       {
         $lookup: {
@@ -320,7 +287,7 @@ exports.getAttendanceHistory = async (req, res) => {
 
     const dataPipeline = [
       ...basePipeline,
-      { $sort: { date: -1, _id: 1 } }, // moved sort here
+      { $sort: { date: -1, _id: 1 } },
       { $skip: skip },
       { $limit: limitNum },
     ];
@@ -347,10 +314,11 @@ exports.getAttendanceHistory = async (req, res) => {
 
 exports.getAttendanceStats = async (req, res) => {
   try {
-    if (req.user.role !== "teacher") {
+    if (!["teacher", "admin"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
     console.log("📥 Incoming query params:", req.query);
+    const schoolId = req.user.schoolId;
     const classFilter = req.query.class ? parseInt(req.query.class) : null;
     const dateQuery = req.query.date;
 
@@ -381,6 +349,7 @@ exports.getAttendanceStats = async (req, res) => {
     const studentMatch = {
       role: "student",
       isDeleted: { $ne: true },
+      schoolId,
       ...(classFilter !== null && { class: classFilter }),
     };
 
@@ -416,6 +385,7 @@ exports.getAttendanceStats = async (req, res) => {
       {
         $match: {
           "student.isDeleted": { $ne: true },
+          "student.schoolId": schoolId,
           ...(classFilter !== null && { "student.class": classFilter }),
           date: { $gte: startDate, $lte: endDate },
         },
@@ -486,6 +456,7 @@ exports.getAttendanceStats = async (req, res) => {
       {
         $match: {
           "student.isDeleted": { $ne: true },
+          "student.schoolId": schoolId,
           ...(classFilter !== null && { "student.class": classFilter }),
           date: { $gte: last7DaysStart, $lte: endDate },
         },
@@ -532,35 +503,58 @@ exports.getAttendanceStats = async (req, res) => {
 };
 exports.getTodaysAttendancePercentage = async (req, res) => {
   try {
-    if (req.user.role !== "teacher") {
+    if (!["teacher", "admin"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
+
+    const schoolId = req.user.schoolId;
 
     const today = new Date();
     const startDate = new Date(today.setHours(0, 0, 0, 0));
     const endDate = new Date(today.setHours(23, 59, 59, 999));
 
-    // Fetch total students
+    // ✅ Fetch total students for this teacher's school
     const totalStudents = await User.countDocuments({
       role: "student",
       isDeleted: { $ne: true },
+      schoolId,
     });
 
-    // Fetch today's present students
-    const presentCount = await Attendance.countDocuments({
-      status: "present",
-      date: { $gte: startDate, $lte: endDate },
-    });
+    // ✅ Fetch present students for today in this school using aggregate + lookup
+    const presentResult = await Attendance.aggregate([
+      {
+        $lookup: {
+          from: "users",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "student",
+        },
+      },
+      { $unwind: "$student" },
+      {
+        $match: {
+          status: "present",
+          date: { $gte: startDate, $lte: endDate },
+          "student.schoolId": schoolId,
+          "student.isDeleted": { $ne: true },
+        },
+      },
+      {
+        $count: "presentToday",
+      },
+    ]);
+
+    const presentToday = presentResult[0]?.presentToday || 0;
 
     const percentage =
       totalStudents > 0
-        ? ((presentCount / totalStudents) * 100).toFixed(2)
+        ? ((presentToday / totalStudents) * 100).toFixed(2)
         : "0.00";
 
     res.json({
       date: new Date().toISOString().split("T")[0],
       totalStudents,
-      presentToday: presentCount,
+      presentToday,
       attendancePercentage: `${percentage}%`,
     });
   } catch (error) {

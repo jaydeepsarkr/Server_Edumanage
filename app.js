@@ -7,6 +7,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const userRoutes = require("./routes/userRoutes");
+const schoolRoutes = require("./routes/schoolRoutes");
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", attendanceRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api", userRoutes);
+app.use("/api", schoolRoutes);
 
 // Root route
 app.get("/", (req, res) => {

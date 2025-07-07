@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+
 const {
   registerValidation,
   loginValidation,
@@ -96,6 +97,11 @@ exports.registerUser = async (req, res) => {
       });
     }
 
+    const schoolId = req.user.schoolId; // ✅ from token
+    if (!schoolId) {
+      return res.status(400).json({ error: "Missing schoolId in token" });
+    }
+
     const newUser = new User({
       name,
       email,
@@ -107,6 +113,7 @@ exports.registerUser = async (req, res) => {
       rollNumber,
       enrollmentDate,
       status: status || "active",
+      schoolId,
       ...uploads, // photos/documents urls
     });
 
@@ -137,6 +144,7 @@ exports.loginUser = async (req, res) => {
         role: user.role,
         name: user.name,
         photo: user.photo || null,
+        schoolId: user.schoolId,
       },
       process.env.JWT_SECRET,
       { expiresIn: "30d" }
@@ -150,6 +158,7 @@ exports.loginUser = async (req, res) => {
         role: user.role,
         email: user.email,
         photo: user.photo || null,
+        schoolId: user.schoolId,
       },
     });
   } catch (err) {

@@ -9,10 +9,6 @@ router.post(
   authenticateToken,
   attendanceController.markAttendanceManual
 );
-router.get(
-  "/attendance/mark/:studentId",
-  attendanceController.markAttendanceViaUrl
-);
 
 router.get(
   "/history",
