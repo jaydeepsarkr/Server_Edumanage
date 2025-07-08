@@ -5,7 +5,7 @@ const {
   createSchool,
   getSchoolById,
 } = require("../controllers/schoolController");
-const authenticateToken = require("../middleware/authenticateToken"); // assumed
+const authenticateToken = require("../middleware/authenticateToken");
 
 router.post("/schools", authenticateToken, createSchool);
 router.get("/schools", authenticateToken, getSchoolById);

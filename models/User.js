@@ -100,7 +100,9 @@ const userSchema = new mongoose.Schema({
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "School",
-    required: true, // Every user must belong to a school
+    required: function () {
+      return this.role !== "admin";
+    },
   },
 
   isDeleted: { type: Boolean, default: false },
