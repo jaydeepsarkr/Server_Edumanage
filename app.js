@@ -14,11 +14,13 @@ const app = express();
 // Middleware
 app.use(
   cors({
-    origin: "*", // Allow all origins
+    origin: "https://edumanages.netlify.app",
+    credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
