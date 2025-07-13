@@ -134,9 +134,9 @@ exports.getCurrentUser = async (req, res) => {
 
 exports.getStudentById = async (req, res) => {
   try {
-    // ✅ Allow only teachers
-    if (req.user.role !== "teacher") {
-      return res.status(403).json({ error: "Access denied. Teachers only." });
+    // ✅ Allow only teachers or admins
+    if (!["teacher", "admin"].includes(req.user.role)) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
     const student = await User.findOne({
@@ -149,7 +149,7 @@ exports.getStudentById = async (req, res) => {
       return res.status(404).json({ error: "Student not found" });
     }
 
-    res.json({ name: student.name }); // Add more fields as needed
+    res.json({ name: student.name }); // Add more fields if needed
   } catch (error) {
     console.error("getStudentById error:", error);
     res.status(500).json({ error: "Internal server error" });
