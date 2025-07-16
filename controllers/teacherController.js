@@ -17,7 +17,8 @@ exports.getTeachers = async (req, res) => {
 
     const query = {
       role: "teacher",
-      schoolId, // ✅ Only fetch teachers from the same school
+      schoolId,
+      isDeleted: { $ne: true }, // ✅ Exclude deleted users
     };
 
     // Optional filters
@@ -33,7 +34,11 @@ exports.getTeachers = async (req, res) => {
       ];
     }
 
+    const selectedFields =
+      "id name role email phone status photo dob subject qualifications aadhaarNumber aadhaarCard vtc postOffice subDistrict state pincode remark";
+
     const teachers = await User.find(query)
+      .select(selectedFields)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
