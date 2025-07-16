@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
 const userSchema = new mongoose.Schema({
+  // 🔐 Common Fields
   name: { type: String, required: true },
 
   role: {
@@ -12,11 +13,6 @@ const userSchema = new mongoose.Schema({
 
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  status: {
-    type: String,
-    enum: ["active", "leaved", "passout"],
-    default: "active",
-  },
 
   phone: {
     type: String,
@@ -28,21 +24,28 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  address: { type: String, required: true },
+  address: {
+    type: String,
+    required: function () {
+      return this.role !== "teacher";
+    },
+  },
 
+  status: {
+    type: String,
+    enum: ["active", "leaved", "passout"],
+    default: "active",
+  },
+
+  photo: { type: String, default: "" },
+
+  // 📚 Student-Only Fields
   class: {
     type: Number,
     min: 1,
     max: 10,
     required: function () {
       return this.role === "student";
-    },
-    validate: {
-      validator: function (value) {
-        if (this.role === "student") return value >= 1 && value <= 10;
-        return true;
-      },
-      message: "Class must be between 1 and 10 for students",
     },
   },
 
@@ -51,14 +54,8 @@ const userSchema = new mongoose.Schema({
     required: function () {
       return this.role === "student";
     },
-    validate: {
-      validator: function (value) {
-        if (this.role === "student") return !!value;
-        return true;
-      },
-      message: "Roll number is required for students",
-    },
   },
+
   enrollmentDate: {
     type: Date,
     required: function () {
@@ -68,35 +65,122 @@ const userSchema = new mongoose.Schema({
       return this.role === "student" ? new Date() : undefined;
     },
   },
-  photo: {
-    type: String,
-    default: "",
-  },
-  aadhaarCard: {
-    type: String,
-    required: function () {
-      return this.role === "student";
-    },
-    default: "undefined",
-  },
 
   birthCertificate: {
     type: String,
     required: function () {
       return this.role === "student";
     },
-    default: "undefined",
+    default: "",
   },
+
   transferCertificate: {
     type: String,
     default: "",
+    validate: {
+      validator: function (value) {
+        return !value || this.role === "student";
+      },
+      message: "Transfer Certificate is only allowed for students.",
+    },
   },
 
   marksheet: {
     type: String,
     default: "",
+    validate: {
+      validator: function (value) {
+        return !value || this.role === "student";
+      },
+      message: "Marksheet is only allowed for students.",
+    },
   },
 
+  // 🎓 Teacher-Only Fields
+  dob: {
+    type: Date,
+    required: function () {
+      return this.role === "teacher";
+    },
+  },
+
+  subject: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+  },
+
+  qualifications: {
+    type: [
+      {
+        type: { type: String, required: true },
+        institution: { type: String, required: true },
+        year: { type: String, required: true },
+        fileUrl: { type: String, default: "" },
+        _id: false, // Prevent auto-generation of _id for subdocs
+      },
+    ],
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  aadhaarNumber: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  aadhaarCard: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  vtc: {
+    type: String,
+    default: "", // Optional for all roles
+  },
+
+  postOffice: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  subDistrict: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  state: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  pincode: {
+    type: String,
+    required: function () {
+      return this.role === "teacher";
+    },
+    default: "",
+  },
+
+  // 🏫 Common
   schoolId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "School",
@@ -105,26 +189,22 @@ const userSchema = new mongoose.Schema({
     },
   },
 
+  remark: { type: String, default: "" },
+
   isDeleted: { type: Boolean, default: false },
-  remark: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Hash password before saving
+// 🔐 Password Hash Middleware
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
 
-// Compare password method
+// 🔐 Compare Password Method
 userSchema.methods.matchPassword = function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password);
 };
-
-// userSchema.pre(/^find/, function (next) {
-//   this.where({ isDeleted: false });
-//   next();
-// });
 
 module.exports = mongoose.model("User", userSchema);

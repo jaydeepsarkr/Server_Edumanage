@@ -2,7 +2,7 @@ const multer = require("multer");
 const sharp = require("sharp");
 const path = require("path");
 
-// Allowed fields
+// Allowed fixed fields
 const allowedFields = [
   "photo",
   "aadhaarCard",
@@ -14,22 +14,29 @@ const allowedFields = [
 // Multer memory storage
 const multerStorage = multer.memoryStorage();
 
-// ✅ Allow image for photo; image or PDF for documents
+// ✅ Filter for fixed + dynamic qualification files
 const multerFilter = (req, file, cb) => {
   const isImage = file.mimetype.startsWith("image/");
   const isPDF = file.mimetype === "application/pdf";
   const field = file.fieldname;
   const ext = path.extname(file.originalname).toLowerCase();
 
-  if (!allowedFields.includes(field)) {
+  const isQualification = /^qualification_\d+_file$/.test(field);
+
+  if (!allowedFields.includes(field) && !isQualification) {
     return cb(new Error(`Unknown upload field "${field}"`), false);
   }
 
-  // ✅ "photo" field must be image
+  // ✅ "photo" must be image
   if (field === "photo" && isImage) return cb(null, true);
 
   // ✅ Other fields can be image or PDF
-  if (field !== "photo" && (isImage || isPDF)) return cb(null, true);
+  if (
+    (allowedFields.includes(field) || isQualification) &&
+    (isImage || isPDF)
+  ) {
+    return cb(null, true);
+  }
 
   return cb(
     new Error(`Invalid file type or extension "${ext}" for field "${field}"`),
@@ -37,47 +44,31 @@ const multerFilter = (req, file, cb) => {
   );
 };
 
-// Multer upload config
+// ✅ Accept any field — filtering is done by `multerFilter`
 const upload = multer({
   storage: multerStorage,
   fileFilter: multerFilter,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
-// Handle multiple fields
-const uploadUserDocuments = upload.fields(
-  allowedFields.map((name) => ({ name, maxCount: 1 }))
-);
+// ✅ Use .any() to accept both known and dynamic fields
+const uploadUserDocuments = upload.any();
 
-// Resize only photo
+// ✅ Resize photo only (if present)
 const processUploads = async (req, res, next) => {
   try {
-    if (req.files?.photo?.[0]) {
-      const file = req.files.photo[0];
-      const resizedBuffer = await sharp(file.buffer)
-        .resize(500, 500)
-        .jpeg({ quality: 90 })
-        .toBuffer();
+    if (req.files) {
+      const photoFile = req.files.find((file) => file.fieldname === "photo");
+      if (photoFile) {
+        const resizedBuffer = await sharp(photoFile.buffer)
+          .resize(500, 500)
+          .jpeg({ quality: 90 })
+          .toBuffer();
 
-      req.files.photo[0] = {
-        ...file,
-        buffer: resizedBuffer,
-        size: resizedBuffer.length,
-      };
+        photoFile.buffer = resizedBuffer;
+        photoFile.size = resizedBuffer.length;
+      }
     }
-
-    // Debug log
-    // if (req.files) {
-    //   Object.entries(req.files).forEach(([field, files]) => {
-    //     files.forEach((file) => {
-    //       console.log(`✅ Uploading... ${field}:`, {
-    //         name: file.originalname,
-    //         mimetype: file.mimetype,
-    //         size: file.size,
-    //       });
-    //     });
-    //   });
-    // }
 
     next();
   } catch (err) {
@@ -86,24 +77,23 @@ const processUploads = async (req, res, next) => {
   }
 };
 
-// ✅ Fix: Include fieldname for folder mapping
+// ✅ Normalize files into an object: { fieldname: file }
 const normalizeFiles = (req) => {
   const normalized = {};
-  for (const field in req.files) {
-    if (req.files[field]?.[0]) {
-      const file = req.files[field][0];
-      normalized[field] = {
+  if (Array.isArray(req.files)) {
+    req.files.forEach((file) => {
+      normalized[file.fieldname] = {
         originalname: file.originalname,
         mimetype: file.mimetype,
         buffer: file.buffer,
-        fieldname: field, // ✅ This is critical
+        fieldname: file.fieldname,
       };
-    }
+    });
   }
   return normalized;
 };
 
-// Optional: Convert base64 to Buffer (if needed)
+// ✅ Convert base64 to Buffer
 const base64ToBuffer = (base64String) => {
   const matches = base64String.match(/^data:(.+);base64,(.+)$/);
   if (!matches || matches.length !== 3) {

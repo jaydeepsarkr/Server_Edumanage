@@ -25,9 +25,12 @@ const uploadToCloudinary = async (file) => {
     const isPDF = mimetype === "application/pdf";
     const resource_type = isPDF ? "raw" : "image";
     const public_id = originalname.replace(/\.[^/.]+$/, "");
-    const folder = fieldToFolderMap[fieldname] || "uploads/others";
 
-    // console.log(`📤 Uploading ${originalname} to folder: ${folder}`);
+    // ✅ Route qualification files to a dedicated folder
+    const isQualificationField = /^qualification_\d+_file$/.test(fieldname);
+    const folder = isQualificationField
+      ? "uploads/documents/qualifications"
+      : fieldToFolderMap[fieldname] || "uploads/others";
 
     const result = await new Promise((resolve, reject) => {
       cloudinary.uploader
@@ -49,9 +52,11 @@ const uploadToCloudinary = async (file) => {
         .end(buffer);
     });
 
-    if (!result?.public_id) throw new Error("Upload failed");
+    if (!result?.secure_url) {
+      throw new Error("Upload failed");
+    }
 
-    console.log("✅ Cloudinary upload success:", result.secure_url);
+    // console.log(`✅ Uploaded ${originalname} → ${folder}`);
     return result.secure_url;
   } catch (err) {
     console.error("❌ Cloudinary upload failed:", err.message || err);
