@@ -2,29 +2,54 @@ const sharp = require("sharp");
 const User = require("../models/User");
 const { base64ToBuffer } = require("../middleware/uploadPhoto");
 const uploadToCloudinary = require("../utils/cloudinaryUtils");
+const cloudinary = require("cloudinary").v2;
 
+// Extract publicId from a Cloudinary URL
+const extractPublicId = (url) => {
+  if (!url) return null;
+  const match = url.match(/\/v\d+\/([^/]+)\.(jpg|jpeg|png|pdf)$/);
+  return match ? match[1] : null;
+};
+
+// Delete from Cloudinary
+const deleteFromCloudinary = async (url, resourceType = "image") => {
+  const publicId = extractPublicId(url);
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, {
+      resource_type: resourceType,
+    });
+    console.log(`🗑️ Deleted old file: ${publicId}`);
+  } catch (err) {
+    console.error("❌ Cloudinary deletion error:", err.message);
+  }
+};
+
+// 🎯 Controller for editing students only
 exports.editUser = async (req, res) => {
+  console.log("📁 Uploaded Files:", req.files);
+  console.log("📄 Body Fields:", req.body);
   try {
     const id = req.params.id;
 
-    // ✅ Only teachers or admins are allowed
-    if (req.user.role !== "teacher" && req.user.role !== "admin") {
+    // 🔐 Role check
+    if (!["teacher", "admin"].includes(req.user.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    // ✅ Fetch the user to be edited
-    const userToEdit = await User.findById(id);
-    if (!userToEdit) {
-      return res.status(404).json({ error: "User not found" });
+    const student = await User.findById(id);
+    if (!student || student.role !== "student") {
+      return res.status(404).json({ error: "Student not found" });
     }
 
-    // ✅ Ensure both users belong to the same school
-    if (userToEdit.schoolId?.toString() !== req.user.schoolId?.toString()) {
-      return res
-        .status(403)
-        .json({ error: "You can only edit users from your school" });
+    // 🏫 School check
+    if (student.schoolId?.toString() !== req.user.schoolId?.toString()) {
+      return res.status(403).json({
+        error: "You can only edit students from your school",
+      });
     }
 
+    // ✅ Allowed fields for students
     const allowedFields = [
       "name",
       "email",
@@ -41,25 +66,15 @@ exports.editUser = async (req, res) => {
       "marksheet",
     ];
 
-    const docFolders = {
-      photo: "users/profiles",
-      aadhaarCard: "users/documents/aadhaar",
-      birthCertificate: "users/documents/birth_certs",
-      transferCertificate: "users/documents/transfer_certs",
-      marksheet: "users/documents/marksheets",
-    };
-
-    const updates = {};
-
     for (const field of allowedFields) {
       let buffer = null;
 
-      // ✅ Check for uploaded file from Multer
+      // Multer file
       if (req.files?.[field]?.[0]) {
         buffer = req.files[field][0].buffer;
       }
 
-      // ✅ Check for base64 string
+      // Base64 upload
       if (
         !buffer &&
         typeof req.body[field] === "string" &&
@@ -68,14 +83,21 @@ exports.editUser = async (req, res) => {
         buffer = base64ToBuffer(req.body[field]);
       }
 
-      // ✅ Upload file if we have a buffer
+      // File handling
       if (buffer) {
-        // Resize photo if needed
         if (field === "photo") {
           buffer = await sharp(buffer)
             .resize(500, 500)
             .jpeg({ quality: 90 })
             .toBuffer();
+        }
+
+        const oldUrl = student[field];
+        if (oldUrl) {
+          const isPDF =
+            req.files?.[field]?.[0]?.mimetype === "application/pdf" ||
+            req.body[field]?.includes("pdf");
+          await deleteFromCloudinary(oldUrl, isPDF ? "raw" : "image");
         }
 
         const url = await uploadToCloudinary({
@@ -85,31 +107,25 @@ exports.editUser = async (req, res) => {
           fieldname: field,
         });
 
-        updates[field] = url;
+        student[field] = url;
       }
 
-      // ✅ Simple text field (non-file, non-base64)
+      // Simple fields
       else if (
         req.body[field] !== undefined &&
         (typeof req.body[field] !== "string" ||
           !req.body[field].startsWith("data:"))
       ) {
-        updates[field] = req.body[field];
+        student[field] = req.body[field];
       }
     }
 
-    const updatedUser = await User.findByIdAndUpdate(id, updates, {
-      new: true,
-      runValidators: true,
-    });
+    // 🧠 Save to trigger proper validation
+    await student.save();
 
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    res.json(updatedUser);
+    res.json(student);
   } catch (error) {
-    console.error("editUser error:", error);
+    console.error("❌ editStudent error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
