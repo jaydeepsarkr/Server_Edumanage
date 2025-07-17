@@ -178,8 +178,10 @@ exports.editTeacherById = async (req, res) => {
 
 // GET /api/teachers
 exports.getTeachers = async (req, res) => {
+  console.log("📥 Incoming Query Params:", req.query);
+
   try {
-    const { page = 1, limit = 10, search = "", status, subject } = req.query;
+    const { page = 1, limit = 20, search = "", status, subject } = req.query;
 
     // ✅ Get schoolId from logged-in user
     const schoolId = req.user?.schoolId;
@@ -194,7 +196,7 @@ exports.getTeachers = async (req, res) => {
     const query = {
       role: "teacher",
       schoolId,
-      isDeleted: { $ne: true }, // ✅ Exclude deleted users
+      isDeleted: { $ne: true },
     };
 
     // Optional filters
