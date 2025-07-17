@@ -118,13 +118,13 @@ const userSchema = new mongoose.Schema({
         institution: { type: String, required: true },
         year: { type: String, required: true },
         fileUrl: { type: String, default: "" },
-        _id: false, // Prevent auto-generation of _id for subdocs
+        _id: false,
       },
     ],
     required: function () {
       return this.role === "teacher";
     },
-    default: "",
+    default: [],
   },
 
   aadhaarNumber: {

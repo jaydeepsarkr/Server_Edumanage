@@ -23,7 +23,8 @@ const uploadToCloudinary = async (file) => {
     }
 
     const isPDF = mimetype === "application/pdf";
-    const resource_type = isPDF ? "raw" : "image";
+    const resource_type = "auto";
+
     const public_id = originalname.replace(/\.[^/.]+$/, "");
 
     // ✅ Route qualification files to a dedicated folder

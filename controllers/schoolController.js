@@ -69,7 +69,7 @@ exports.createSchool = async (req, res) => {
 
     // 🔗 Link school to admin
     admin.schoolId = school._id;
-    await admin.save();
+    await admin.save({ validateBeforeSave: false });
 
     // 🔁 Generate updated token including schoolId
     const token = jwt.sign(

@@ -4,14 +4,14 @@ const cloudinary = require("cloudinary").v2;
 const uploadToCloudinary = require("../utils/cloudinaryUtils");
 const { base64ToBuffer, normalizeFiles } = require("../middleware/uploadPhoto");
 
-// Extract publicId from Cloudinary URL
+// 🔍 Extract publicId from Cloudinary URL
 const extractPublicId = (url) => {
   if (!url) return null;
   const match = url.match(/\/v\d+\/([^/]+)\.(jpg|jpeg|png|pdf)$/);
   return match ? match[1] : null;
 };
 
-// Delete from Cloudinary
+// 🗑️ Delete file from Cloudinary
 const deleteFromCloudinary = async (url, resourceType = "image") => {
   const publicId = extractPublicId(url);
   if (!publicId) return;
@@ -25,15 +25,12 @@ const deleteFromCloudinary = async (url, resourceType = "image") => {
   }
 };
 
-// ✅ Controller
+// ✏️ Edit teacher by ID
 exports.editTeacherById = async (req, res) => {
-  console.log("📁 Uploaded Files:", req.files);
-  console.log("📄 Body Fields:", req.body);
-
   try {
     const teacherId = req.params.id;
-
     const teacher = await User.findById(teacherId);
+
     if (!teacher || teacher.role !== "teacher") {
       return res.status(404).json({ error: "Teacher not found" });
     }
@@ -59,7 +56,7 @@ exports.editTeacherById = async (req, res) => {
       "qualifications",
     ];
 
-    const files = normalizeFiles(req); // ✅ Flatten file array
+    const files = normalizeFiles(req);
     const updates = {};
 
     for (const field of allowedFields) {
@@ -67,7 +64,7 @@ exports.editTeacherById = async (req, res) => {
       let isPDF = false;
       let originalname = "";
 
-      // ✅ 1. File from Multer (now flattened)
+      // 🧾 1. Handle Multer upload
       if (files[field]) {
         const file = files[field];
         buffer = file.buffer;
@@ -75,20 +72,18 @@ exports.editTeacherById = async (req, res) => {
         isPDF = file.mimetype === "application/pdf";
       }
 
-      // ✅ 2. Base64 file
+      // 🧾 2. Handle base64 upload
       if (
         !buffer &&
         typeof req.body[field] === "string" &&
         req.body[field].startsWith("data:")
       ) {
         buffer = base64ToBuffer(req.body[field]);
-        originalname = `${field}_${Date.now()}.${
-          field === "aadhaarCard" ? "pdf" : "jpg"
-        }`;
         isPDF = req.body[field].includes("pdf");
+        originalname = `${field}_${Date.now()}.${isPDF ? "pdf" : "jpg"}`;
       }
 
-      // ✅ 3. Upload file to Cloudinary
+      // 🧾 3. Handle upload to Cloudinary
       if (buffer) {
         if (field === "photo") {
           buffer = await sharp(buffer)
@@ -100,7 +95,7 @@ exports.editTeacherById = async (req, res) => {
         }
 
         const oldUrl = teacher[field];
-        if (oldUrl && oldUrl.startsWith("http")) {
+        if (oldUrl?.startsWith("http")) {
           await deleteFromCloudinary(oldUrl, isPDF ? "raw" : "image");
         }
 
@@ -114,24 +109,61 @@ exports.editTeacherById = async (req, res) => {
         updates[field] = uploadedUrl;
       }
 
-      // ✅ 4. Regular field
-      else if (
-        req.body[field] !== undefined &&
-        (typeof req.body[field] !== "string" ||
-          !req.body[field].startsWith("data:"))
-      ) {
-        if (field === "qualifications" && typeof req.body[field] === "string") {
+      // 📋 4. Handle regular fields and qualifications
+      else if (req.body[field] !== undefined) {
+        if (field === "qualifications") {
+          let qualifications = [];
+
           try {
-            updates[field] = JSON.parse(req.body[field]);
+            qualifications = Array.isArray(req.body.qualifications)
+              ? req.body.qualifications
+              : JSON.parse(req.body.qualifications);
           } catch (err) {
-            console.warn("⚠️ Invalid qualifications JSON");
+            console.warn("⚠️ Invalid qualifications format");
           }
+
+          const updatedQualifications = [];
+
+          for (const [index, q] of qualifications.entries()) {
+            let { type, institution, year, fileUrl } = q;
+
+            if (fileUrl?.startsWith("data:")) {
+              const isPDF = fileUrl.includes("pdf");
+              const buffer = base64ToBuffer(fileUrl);
+              const originalname = `qualification_${index}_${Date.now()}.${
+                isPDF ? "pdf" : "jpg"
+              }`;
+
+              // 📦 Delete old qualification file (if exists)
+              const existingFileUrl = teacher.qualifications?.[index]?.fileUrl;
+              if (existingFileUrl?.startsWith("http")) {
+                const oldIsPDF = existingFileUrl.includes(".pdf");
+                await deleteFromCloudinary(
+                  existingFileUrl,
+                  oldIsPDF ? "raw" : "image"
+                );
+              }
+
+              // 📤 Upload new qualification file
+              fileUrl = await uploadToCloudinary({
+                buffer,
+                originalname,
+                mimetype: isPDF ? "application/pdf" : "image/jpeg",
+                fieldname: `qualification_${index}_file`,
+              });
+            }
+
+            updatedQualifications.push({ type, institution, year, fileUrl });
+          }
+
+          updates[field] = updatedQualifications;
         } else {
           updates[field] = req.body[field];
         }
       }
     }
 
+    // 💾 Save updated teacher
     const updatedTeacher = await User.findByIdAndUpdate(teacherId, updates, {
       new: true,
       runValidators: true,
