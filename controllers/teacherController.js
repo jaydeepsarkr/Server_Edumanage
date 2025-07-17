@@ -178,8 +178,6 @@ exports.editTeacherById = async (req, res) => {
 
 // GET /api/teachers
 exports.getTeachers = async (req, res) => {
-  console.log("📥 Incoming Query Params:", req.query);
-
   try {
     const { page = 1, limit = 20, search = "", status, subject } = req.query;
 
