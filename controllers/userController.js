@@ -1,8 +1,9 @@
 const sharp = require("sharp");
 const User = require("../models/User");
-const { base64ToBuffer } = require("../middleware/uploadPhoto");
+const { base64ToBuffer, normalizeFiles } = require("../middleware/uploadPhoto");
 const uploadToCloudinary = require("../utils/cloudinaryUtils");
 const cloudinary = require("cloudinary").v2;
+const bcrypt = require("bcryptjs");
 
 // Extract publicId from a Cloudinary URL
 const extractPublicId = (url) => {
@@ -22,6 +23,81 @@ const deleteFromCloudinary = async (url, resourceType = "image") => {
     console.log(`🗑️ Deleted old file: ${publicId}`);
   } catch (err) {
     console.error("❌ Cloudinary deletion error:", err.message);
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    console.log("🟡 Incoming update request body:", req.body);
+    const userId = req.user.userId;
+    const schoolId = req.user.schoolId;
+    const { currentPassword, newPassword, photoBase64 } = req.body;
+
+    const user = await User.findOne({ _id: userId, schoolId });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // 🔐 Password update
+    if (currentPassword && newPassword) {
+      // First, verify the current password
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ message: "Current password is incorrect" });
+      }
+
+      // Assign the plain new password to the user object.
+      // The Mongoose pre('save') hook in your User model will handle hashing this password.
+      user.password = newPassword;
+    }
+
+    // 🖼️ Profile photo update (keeping original logic as it's not related to the bcrypt issue)
+    const files = normalizeFiles(req);
+    let photoBuffer = null;
+    let originalname = "";
+
+    // Priority 1: Multer
+    if (files.photo) {
+      photoBuffer = files.photo.buffer;
+      originalname = files.photo.originalname || `photo_${Date.now()}.jpg`;
+    }
+    // Priority 2: Base64
+    if (
+      !photoBuffer &&
+      typeof photoBase64 === "string" &&
+      photoBase64.startsWith("data:")
+    ) {
+      photoBuffer = base64ToBuffer(photoBase64);
+      originalname = `photo_${Date.now()}.jpg`;
+    }
+
+    if (photoBuffer) {
+      const resizedPhoto = await sharp(photoBuffer)
+        .resize(500, 500)
+        .jpeg({ quality: 90 })
+        .toBuffer();
+
+      if (user.photo && user.photo.startsWith("http")) {
+        await deleteFromCloudinary(user.photo);
+      }
+
+      const uploadRes = await uploadToCloudinary({
+        buffer: resizedPhoto,
+        originalname,
+        mimetype: "image/jpeg",
+        fieldname: "photo",
+      });
+      user.photo = uploadRes;
+    }
+
+    // 💾 Save the user object, explicitly disabling schema validation for this save operation.
+    // The pre('save') hook for password hashing will still run.
+    await user.save({ validateBeforeSave: false });
+
+    res.json({ message: "Profile updated successfully", photo: user.photo });
+  } catch (error) {
+    console.error("❌ Profile update error:", error.message);
+    res.status(500).json({ message: "Server error" });
   }
 };
 

@@ -8,6 +8,7 @@ const {
   editUser,
   deleteUser,
   promoteStudentsByIds,
+  updateProfile,
 } = require("../controllers/userController");
 
 const {
@@ -22,6 +23,8 @@ router.get("/users/me", authenticateToken, getCurrentUser);
 
 // ✅ 2. THEN THE DYNAMIC ROUTE
 router.get("/users/:id", authenticateToken, getUserById);
+
+router.put("/users/update-profile", authenticateToken, updateProfile);
 
 // ✅ Other routes
 router.put(
