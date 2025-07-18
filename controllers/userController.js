@@ -27,8 +27,6 @@ const deleteFromCloudinary = async (url, resourceType = "image") => {
 
 // 🎯 Controller for editing students only
 exports.editUser = async (req, res) => {
-  console.log("📁 Uploaded Files:", req.files);
-  console.log("📄 Body Fields:", req.body);
   try {
     const id = req.params.id;
 
@@ -133,8 +131,10 @@ exports.editUser = async (req, res) => {
 exports.getCurrentUser = async (req, res) => {
   try {
     const userId = req.user.userId; // From the token
+
+    // Exclude 'password', 'isDeleted', and 'createdAt'
     const user = await User.findById(userId).select(
-      "_id name role email phone address class rollNumber password photo"
+      "-password -isDeleted -createdAt"
     );
 
     if (!user) {

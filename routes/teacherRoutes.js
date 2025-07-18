@@ -15,7 +15,7 @@ router.get("/teachers", authenticate, authorizeRole("admin"), getTeachers);
 router.put(
   "/teachers/:id",
   authenticate,
-  authorizeRole("admin"),
+  authorizeRole("admin", "teacher"),
   editTeacherById
 );
 
