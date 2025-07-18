@@ -35,38 +35,26 @@ exports.editTeacherById = async (req, res) => {
       return res.status(404).json({ error: "Teacher not found" });
     }
 
-    // 🔐 Permission check
-    const isAdmin = req.user.role === "admin";
-    const isSelf =
-      req.user.role === "teacher" && req.user.userId.toString() === teacherId;
-
-    if (!isAdmin && !isSelf) {
-      return res.status(403).json({ error: "Unauthorized access" });
-    }
-
-    // 🧠 Allow different fields based on role
-    const allowedFields = isAdmin
-      ? [
-          "name",
-          "email",
-          "phone",
-          "dob",
-          "gender",
-          "subject",
-          "address",
-          "status",
-          "photo",
-          "aadhaarCard",
-          "aadhaarNumber",
-          "remarks",
-          "vtc",
-          "postOffice",
-          "subDistrict",
-          "state",
-          "pincode",
-          "qualifications",
-        ]
-      : ["photo"]; // 🧑‍🏫 Teacher can update only photo
+    const allowedFields = [
+      "name",
+      "email",
+      "phone",
+      "dob",
+      "gender",
+      "subject",
+      "address",
+      "status",
+      "photo",
+      "aadhaarCard",
+      "aadhaarNumber",
+      "remarks",
+      "vtc",
+      "postOffice",
+      "subDistrict",
+      "state",
+      "pincode",
+      "qualifications",
+    ];
 
     const files = normalizeFiles(req);
     const updates = {};
@@ -76,7 +64,7 @@ exports.editTeacherById = async (req, res) => {
       let isPDF = false;
       let originalname = "";
 
-      // 1. Multer upload
+      // 🧾 1. Handle Multer upload
       if (files[field]) {
         const file = files[field];
         buffer = file.buffer;
@@ -84,7 +72,7 @@ exports.editTeacherById = async (req, res) => {
         isPDF = file.mimetype === "application/pdf";
       }
 
-      // 2. base64 upload
+      // 🧾 2. Handle base64 upload
       if (
         !buffer &&
         typeof req.body[field] === "string" &&
@@ -95,7 +83,7 @@ exports.editTeacherById = async (req, res) => {
         originalname = `${field}_${Date.now()}.${isPDF ? "pdf" : "jpg"}`;
       }
 
-      // 3. Upload to Cloudinary
+      // 🧾 3. Handle upload to Cloudinary
       if (buffer) {
         if (field === "photo") {
           buffer = await sharp(buffer)
@@ -121,7 +109,7 @@ exports.editTeacherById = async (req, res) => {
         updates[field] = uploadedUrl;
       }
 
-      // 4. Non-file fields
+      // 📋 4. Handle regular fields and qualifications
       else if (req.body[field] !== undefined) {
         if (field === "qualifications") {
           let qualifications = [];
@@ -146,6 +134,7 @@ exports.editTeacherById = async (req, res) => {
                 isPDF ? "pdf" : "jpg"
               }`;
 
+              // 📦 Delete old qualification file (if exists)
               const existingFileUrl = teacher.qualifications?.[index]?.fileUrl;
               if (existingFileUrl?.startsWith("http")) {
                 const oldIsPDF = existingFileUrl.includes(".pdf");
@@ -155,6 +144,7 @@ exports.editTeacherById = async (req, res) => {
                 );
               }
 
+              // 📤 Upload new qualification file
               fileUrl = await uploadToCloudinary({
                 buffer,
                 originalname,
@@ -173,7 +163,7 @@ exports.editTeacherById = async (req, res) => {
       }
     }
 
-    // Save changes
+    // 💾 Save updated teacher
     const updatedTeacher = await User.findByIdAndUpdate(teacherId, updates, {
       new: true,
       runValidators: true,
