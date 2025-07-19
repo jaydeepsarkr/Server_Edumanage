@@ -109,14 +109,14 @@ exports.getAttendanceForToday = async (req, res) => {
 exports.getAttendanceNotifications = async (req, res) => {
   try {
     const { schoolId, role } = req.user;
+
     if (role !== "admin") {
-      return res
-        .status(403)
-        .json({ message: "Only admins can access notifications." });
+      return res.status(403).json({
+        message: "Only admins can access notifications.",
+      });
     }
 
     const today = moment().format("YYYY-MM-DD");
-
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -127,43 +127,38 @@ exports.getAttendanceNotifications = async (req, res) => {
     }).populate("userId", "name");
 
     const total = allRecords.length;
-
     const paginatedRecords = allRecords.slice(skip, skip + limit);
-
     const notifications = [];
 
-    const lateCheckins = paginatedRecords
-      .filter((r) => r.status === "late")
-      .map((r) => {
-        const name = r.userId?.name || "Unknown";
-        const time = r.checkIn
-          ? moment(r.checkIn).format("hh:mm A")
+    for (const record of paginatedRecords) {
+      const name = record.userId?.name || "Unknown";
+
+      if (record.status === "late") {
+        const checkInTime = record.checkIn
+          ? moment(new Date(record.checkIn).toISOString()).format("hh:mm A")
           : "unknown time";
-        return `${name} had late check-in at ${time}`;
-      });
+        notifications.push(`${name} had late check-in at ${checkInTime}`);
+      }
 
-    const missingCheckouts = paginatedRecords
-      .filter((r) => r.checkIn && !r.checkOut)
-      .map((r) => {
-        const name = r.userId?.name || "Unknown";
-        return `${name} missed checkout`;
-      });
-
-    if (lateCheckins.length) notifications.push(...lateCheckins);
-    if (missingCheckouts.length) notifications.push(...missingCheckouts);
+      if (record.checkIn && !record.checkOut) {
+        notifications.push(`${name} missed checkout`);
+      }
+    }
 
     if (!paginatedRecords.length) {
       notifications.push("No attendance records found for today.");
     }
 
-    res.json({
+    return res.json({
       notifications,
       totalRecords: total,
       page,
       limit,
     });
   } catch (err) {
-    console.error("Error fetching attendance notifications:", err);
-    res.status(500).json({ message: "Failed to get notifications." });
+    console.error("❌ Error fetching attendance notifications:", err);
+    return res.status(500).json({
+      message: "Failed to get notifications.",
+    });
   }
 };
