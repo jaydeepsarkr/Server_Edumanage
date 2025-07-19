@@ -9,6 +9,7 @@ const attendanceRoutes = require("./routes/attendanceRoutes");
 const userRoutes = require("./routes/userRoutes");
 const schoolRoutes = require("./routes/schoolRoutes");
 const teacherRoutes = require("./routes/teacherRoutes");
+const teacherAttendanceRoutes = require("./routes/teacherAttendanceRoutes");
 
 const app = express();
 
@@ -57,6 +58,7 @@ app.use("/api/attendance", attendanceRoutes);
 app.use("/api", userRoutes);
 app.use("/api", schoolRoutes);
 app.use("/api", teacherRoutes);
+app.use("/api/attendance/teacher", teacherAttendanceRoutes);
 
 // Root route
 app.get("/", (req, res) => {

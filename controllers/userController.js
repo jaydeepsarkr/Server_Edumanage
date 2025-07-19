@@ -28,7 +28,6 @@ const deleteFromCloudinary = async (url, resourceType = "image") => {
 
 exports.updateProfile = async (req, res) => {
   try {
-    console.log("🟡 Incoming update request body:", req.body);
     const userId = req.user.userId;
     const schoolId = req.user.schoolId;
     const { currentPassword, newPassword, photoBase64 } = req.body;
